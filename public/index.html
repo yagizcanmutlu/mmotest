@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>JS 3D MORPG – Vertical Slice</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#000;font-family:system-ui,Arial}
+    #root{height:100dvh;width:100vw;overflow:hidden;position:relative}
+    .hud{position:absolute;top:16px;left:16px;display:flex;gap:12px;align-items:center;z-index:9}
+    .avatar{width:64px;height:64px;border-radius:50%;border:3px solid #5b6; background:#333 url('https://picsum.photos/100') center/cover no-repeat;}
+    .bar{width:200px;height:18px;border:2px solid #1a1; border-radius:4px; background:#233}
+    .bar>i{display:block;height:100%;width:100%;background:linear-gradient(#8ef,#4f4);transform-origin:left center}
+    .cta{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:8;background:rgba(0,0,0,.5);backdrop-filter:blur(4px)}
+    .cta button{padding:14px 20px;border-radius:10px;border:0;font-weight:700;cursor:pointer}
+    .debug{position:absolute;bottom:10px;left:10px;color:#9cf;font-size:12px;opacity:.8}
+  </style>
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div id="root">
+    <div class="hud">
+      <div class="avatar"></div>
+      <div class="bar"><i id="hpFill"></i></div>
+    </div>
+    <div class="cta" id="cta">
+      <button id="playBtn">Tıklayıp oyna (WASD + Fare)</button>
+    </div>
+    <div class="debug" id="dbg"></div>
+  </div>
+  <script src="client.js"></script>
+</body>
+</html>
