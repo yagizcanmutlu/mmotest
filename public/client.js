@@ -1,107 +1,189 @@
 /* global THREE, io */
 (() => {
-  const socket = io();
-
-  // === THREE.JS SAHNE ===
+  // --- UI EL ---
   const root = document.getElementById("root");
-  const dbg = document.getElementById("dbg");
-  const hpFill = document.getElementById("hpFill");
   const cta = document.getElementById("cta");
   const playBtn = document.getElementById("playBtn");
+  const nameInput = document.getElementById("nameInput");
+  const pointsEl = document.getElementById("points");
+  const chatLog = document.getElementById("chatLog");
+  const chatText = document.getElementById("chatText");
+  const chatSend = document.getElementById("chatSend");
+  const toast = document.getElementById("toast");
 
+  // --- SOCKET ---
+  const socket = io(); // aynı origin
+
+  // --- THREE SCENE ---
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(root.clientWidth, root.clientHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   root.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x0a0a18, 18, 90);
+  scene.fog = new THREE.Fog(0x090a14, 20, 120);
 
-  const camera = new THREE.PerspectiveCamera(75, root.clientWidth / root.clientHeight, 0.1, 500);
+  const camera = new THREE.PerspectiveCamera(75, root.clientWidth / root.clientHeight, 0.1, 600);
   camera.position.set(0, 1.6, 4);
 
-  const hemi = new THREE.HemisphereLight(0x88aaff, 0x080820, 1.0);
+  const hemi = new THREE.HemisphereLight(0x87a8ff, 0x070712, 1.0);
   scene.add(hemi);
-  const dir = new THREE.DirectionalLight(0xaaddff, 0.6);
-  dir.position.set(5,10,2);
+  const dir = new THREE.DirectionalLight(0x8fd0ff, 0.6);
+  dir.position.set(6,10,4);
   scene.add(dir);
 
-  // Zemin
-  const groundGeo = new THREE.PlaneGeometry(500, 500, 1, 1);
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x111319, roughness: 1, metalness: 0 });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
+  // Zemini ve basit neon diskleri
+  const gGround = new THREE.PlaneGeometry(600, 600);
+  const mGround = new THREE.MeshStandardMaterial({ color: 0x0c0f14, roughness: 1.0 });
+  const ground = new THREE.Mesh(gGround, mGround);
   ground.rotation.x = -Math.PI/2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Basit yıldızlı gökyüzü (particle)
+  // Gökyüzü noktaları
   const stars = new THREE.Points(
-    new THREE.BufferGeometry().setAttribute(
-      "position",
+    new THREE.BufferGeometry().setAttribute("position",
       new THREE.Float32BufferAttribute(
-        new Array(3000).fill(0).flatMap(() => [
-          (Math.random()-0.5)*300,
-          20 + Math.random()*60,
-          (Math.random()-0.5)*300
-        ]), 3)),
-    new THREE.PointsMaterial({ size: 0.6, color: 0x88aaff })
+        new Array(3000).fill(0).flatMap(()=>[(Math.random()-0.5)*350, 30+Math.random()*90, (Math.random()-0.5)*350]),3)),
+    new THREE.PointsMaterial({ size: 0.6, color: 0x8cbcff })
   );
   scene.add(stars);
 
-  // === OYUNCU/NESNE MODELLERİ ===
-  function makeCapsule(color = 0x55ff88) {
+  // --- HELPERS ---
+  function makeCapsule(color = 0x66ffbb) {
     const g = new THREE.CapsuleGeometry(0.35, 1.0, 6, 12);
-    const m = new THREE.MeshStandardMaterial({ color, roughness:.8, metalness:.1 });
+    const m = new THREE.MeshStandardMaterial({ color, roughness:.85, metalness:.12 });
     const mesh = new THREE.Mesh(g, m);
     mesh.castShadow = true;
-    return mesh;
-  }
-  function makeZombie() {
-    const g = new THREE.BoxGeometry(0.8,1.3,0.6);
-    const m = new THREE.MeshStandardMaterial({ color: 0x884444, roughness:.9 });
-    const z = new THREE.Mesh(g,m);
-    z.castShadow = true;
-    return z;
+    const grp = new THREE.Group();
+    mesh.position.y = 0.65;
+    grp.add(mesh);
+    return { grp, mesh };
   }
 
-  // Yerel oyuncu
+  function makeNameSprite(label) {
+    const padX = 10, padY = 4;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.font = "bold 24px Arial";
+    const w = Math.max(64, ctx.measureText(label).width + padX*2);
+    const h = 34 + padY*2;
+    canvas.width = w; canvas.height = h;
+    ctx.font = "bold 24px Arial";
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.strokeStyle = "rgba(20,100,255,0.9)";
+    ctx.lineWidth = 2;
+    ctx.fillRect(0,0,w,h);
+    ctx.strokeRect(0,0,w,h);
+    ctx.fillStyle = "#bfe4ff";
+    ctx.fillText(label, padX, 26+padY/2);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+    const mat = new THREE.SpriteMaterial({ map: tex, depthWrite:false });
+    const sp = new THREE.Sprite(mat);
+    sp.scale.set(w/100, h/100, 1);
+    sp.position.set(0, 1.6, 0);
+    return sp;
+  }
+
+  function showToast(text) {
+    toast.textContent = text;
+    toast.style.display = "block";
+    setTimeout(()=>toast.style.display = "none", 1600);
+  }
+
+  // --- LOCAL PLAYER ---
   const local = {
     id: null,
-    hp: 100,
+    name: null,
     yaw: 0,
     vel: new THREE.Vector3(),
-    obj: makeCapsule(0x66ffbb)
+    group: null,
+    mesh: null,
+    points: 0,
+    visited: {},
   };
-  local.obj.position.set(0, 0.65, 0);
-  scene.add(local.obj);
+  { const {grp,mesh} = makeCapsule(0x66ffbb); local.group = grp; local.mesh = mesh; scene.add(grp); }
 
-  // Diğer oyuncular
-  const remotes = new Map(); // id -> {obj,target}
+  // --- REMOTES ---
+  const remotes = new Map(); // id -> {group,mesh,name,tag}
   function ensureRemote(p) {
     let R = remotes.get(p.id);
     if (!R) {
-      const obj = makeCapsule(0x88aaff);
-      obj.position.set(p.x, 0.65, p.z);
-      scene.add(obj);
-      R = { obj, target: new THREE.Vector3(p.x, 0.65, p.z), ry: p.ry };
+      const {grp,mesh} = makeCapsule(0x88aaff);
+      grp.position.set(p.x, 0, p.z);
+      const tag = makeNameSprite(p.name || `Yogi-${p.id.slice(0,4)}`);
+      grp.add(tag);
+      scene.add(grp);
+      R = { group: grp, mesh, name: p.name, tag };
       remotes.set(p.id, R);
     }
     return R;
   }
 
-  // NPC
-  const npc = { obj: makeZombie() };
-  npc.obj.position.set(6, 0.65, -6);
-  scene.add(npc.obj);
+  function updateNameTag(R, name) {
+    R.group.remove(R.tag);
+    R.tag.material.map.dispose();
+    const tag = makeNameSprite(name);
+    R.group.add(tag);
+    R.tag = tag;
+    R.name = name;
+  }
 
-  // === KONTROLLER ===
+  // --- HOTSPOTS (sahnede göstermek için) ---
+  const hotspotMeshByName = new Map();
+  function addHotspot(h) {
+    const geo = new THREE.CylinderGeometry(h.r, h.r, 0.2, 48);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x233a88, emissive: 0x2244ff, emissiveIntensity: 0.7, transparent:true, opacity:0.45 });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(h.x, 0.1, h.z);
+    scene.add(m);
+    hotspotMeshByName.set(h.name, m);
+  }
+
+  // --- INPUT ---
   const keys = new Set();
-  window.addEventListener("keydown", (e) => keys.add(e.code));
+  let chatFocus = false;
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Enter") {
+      // chat odak
+      chatFocus = !chatFocus;
+      if (chatFocus) chatText.focus(); else chatText.blur();
+      return;
+    }
+    if (chatFocus) return;
+    keys.add(e.code);
+
+    // Emote kısayolları
+    const map = {
+      Digit1: "wave",
+      Digit2: "dance",
+      Digit3: "sit",
+      Digit4: "clap",
+      Digit5: "point",
+      Digit6: "cheer",
+    };
+    if (map[e.code]) {
+      socket.emit("emote:play", map[e.code]);
+    }
+  });
   window.addEventListener("keyup", (e) => keys.delete(e.code));
 
-  // Pointer lock
+  // Chat gönder
+  function sendChat() {
+    const t = chatText.value.trim();
+    if (!t) return;
+    socket.emit("chat:send", { text: t });
+    chatText.value = "";
+  }
+  chatSend.addEventListener("click", sendChat);
+  chatText.addEventListener("keydown", (e)=>{ if (e.key === "Enter") sendChat(); });
+
+  // Pointer lock (oyuna giriş)
   playBtn.addEventListener("click", () => {
     cta.style.display = "none";
+    const desired = (nameInput.value || "").trim().slice(0,20);
+    if (desired) socket.emit("profile:update", { name: desired });
     renderer.domElement.requestPointerLock();
   });
   document.addEventListener("pointerlockchange", () => {
@@ -110,103 +192,157 @@
     }
   });
   window.addEventListener("mousemove", (e) => {
-    if (document.pointerLockElement === renderer.domElement) {
+    if (document.pointerLockElement === renderer.domElement && !chatFocus) {
       local.yaw -= e.movementX * 0.0025;
     }
   });
 
-  // === AĞ OLAYLARI ===
-  socket.on("bootstrap", ({ you, players, npc: npcS }) => {
+  // --- SOCKET EVENTS ---
+  socket.on("bootstrap", ({ you, players, hotspots }) => {
     local.id = you.id;
-    local.obj.position.set(you.x, 0.65, you.z);
+    local.name = you.name;
+    local.points = you.points || 0;
+    pointsEl.textContent = `Points: ${local.points}`;
+    local.group.position.set(you.x, 0, you.z);
     local.yaw = you.ry || 0;
-    local.hp = you.hp ?? 100;
-    hpFill.style.transform = `scaleX(${local.hp/100})`;
-    // mevcut oyuncular
-    for (const p of players) ensureRemote(p);
-    // npc
-    npc.obj.position.set(npcS.x, 0.65, npcS.z);
-    npc.obj.rotation.y = npcS.ry || 0;
+
+    (hotspots || []).forEach(addHotspot);
+    (players || []).forEach(p => {
+      const R = ensureRemote(p);
+      updateNameTag(R, p.name || R.name);
+    });
   });
 
   socket.on("player-joined", (p) => {
-    if (p.id !== local.id) ensureRemote(p);
+    if (p.id === local.id) return;
+    const R = ensureRemote(p);
+    updateNameTag(R, p.name || R.name);
   });
   socket.on("player-left", (id) => {
     const R = remotes.get(id);
-    if (R) { scene.remove(R.obj); remotes.delete(id); }
+    if (R) { scene.remove(R.group); remotes.delete(id); }
   });
 
-  socket.on("snapshot", ({ players, npc: npcS }) => {
-    // uzak oyuncuların hedef konumlarını güncelle
-    for (const p of players) {
+  socket.on("player:name", ({id, name}) => {
+    const R = remotes.get(id);
+    if (R) updateNameTag(R, name);
+  });
+  socket.on("player:rank", ({id, rank}) => {
+    // MVP: rank görseli eklemiyoruz; ileride nameplate'e ikon
+  });
+
+  socket.on("chat:msg", ({from, text}) => {
+    const p = document.createElement("p");
+    p.innerHTML = `<b>[${from.rank}] ${from.name}:</b> ${text}`;
+    chatLog.appendChild(p);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  });
+
+  socket.on("points:update", ({ total, delta, reason }) => {
+    local.points = total;
+    pointsEl.textContent = `Points: ${local.points}`;
+    showToast(`${delta>0?'+':''}${delta}  ${reason}`);
+  });
+  socket.on("quest:update", ({code, progress, goal}) => {
+    showToast(`Görev: ${code} ${progress}/${goal}`);
+  });
+
+  socket.on("emote", ({ id, type, until }) => {
+    const target = (id === local.id) ? { group: local.group, mesh: local.mesh } : remotes.get(id);
+    if (!target) return;
+    // Basit animasyon: hafif zıplama / renk vurgu
+    const start = performance.now();
+    const end = until;
+    const baseColor = target.mesh.material.color.clone();
+    function anim() {
+      const t = performance.now();
+      if (t > end) { target.mesh.material.color.copy(baseColor); target.group.position.y = 0; return; }
+      const s = Math.sin((t - start)/120) * 0.08;
+      target.group.position.y = Math.max(0, s);
+      target.mesh.material.color.lerp(new THREE.Color(0x66ccff), 0.15);
+      requestAnimationFrame(anim);
+    }
+    anim();
+  });
+
+  socket.on("snapshot", ({ players }) => {
+    const list = players || [];
+    for (const p of list) {
       if (p.id === local.id) continue;
       const R = ensureRemote(p);
-      R.target.set(p.x, 0.65, p.z);
-      R.ry = p.ry || 0;
+      R.group.position.lerp(new THREE.Vector3(p.x, 0, p.z), 0.2);
+      R.group.rotation.y = THREE.MathUtils.lerp(R.group.rotation.y, p.ry || 0, 0.2);
+      if (R.name !== p.name && p.name) updateNameTag(R, p.name);
     }
-    npc.obj.position.set(npcS.x, 0.65, npcS.z);
-    npc.obj.rotation.y = npcS.ry || 0;
   });
 
-  // === OYUN DÖNGÜSÜ ===
+  // --- GAME LOOP ---
   let last = performance.now();
+  let netAcc = 0;
+  const tmpV = new THREE.Vector3();
+  const speedWalk = 3.2;
+  const speedRun = 6;
+
+  // Hotspot ziyaret kontrolü (client-side trigger)
+  function checkHotspots() {
+    hotspotMeshByName.forEach((mesh, name) => {
+      if (local.visited[name]) return;
+      const d = mesh.position.distanceTo(local.group.position);
+      if (d <= (mesh.geometry.parameters.radiusTop || 2.5) + 0.5) {
+        local.visited[name] = true;
+        socket.emit("hotspot:entered", { name });
+      }
+    });
+  }
+
   function tick(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const dt = Math.min(0.05, (now - last)/1000);
     last = now;
 
-    // hareket
-    const speed = keys.has("ShiftLeft") ? 6 : 3.2;
-    const forward = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
-    const strafe  = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
-
-    // yerel yön vektörü
-    const dir = new THREE.Vector3(strafe, 0, forward).normalize();
-    if (dir.lengthSq() > 0) {
-      const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
-      const dx = dir.x * cos - dir.z * sin;
-      const dz = dir.x * sin + dir.z * cos;
-      local.obj.position.x += dx * speed * dt;
-      local.obj.position.z += dz * speed * dt;
-    }
-    local.obj.rotation.y = local.yaw;
-
-    // basit kamera takip
-    const camDist = 3.5;
-    const cx = local.obj.position.x - Math.sin(local.yaw) * camDist;
-    const cz = local.obj.position.z - Math.cos(local.yaw) * camDist;
-    const cy = 2.0;
-    camera.position.lerp(new THREE.Vector3(cx, cy, cz), 0.15);
-    camera.lookAt(local.obj.position.x, local.obj.position.y + 0.8, local.obj.position.z);
-
-    // uzak oyunculara yumuşak yaklaşım
-    for (const R of remotes.values()) {
-      R.obj.position.lerp(R.target, 0.2);
-      R.obj.rotation.y = THREE.MathUtils.lerp(R.obj.rotation.y, R.ry, 0.2);
+    // movement
+    if (!chatFocus) {
+      const forward = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
+      const strafe  = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
+      const spd = keys.has("ShiftLeft") ? speedRun : speedWalk;
+      if (forward || strafe) {
+        tmpV.set(strafe, 0, forward).normalize();
+        const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
+        const dx = tmpV.x * cos - tmpV.z * sin;
+        const dz = tmpV.x * sin + tmpV.z * cos;
+        local.group.position.x += dx * spd * dt;
+        local.group.position.z += dz * spd * dt;
+      }
+      local.group.rotation.y = local.yaw;
     }
 
-    // Ağ: durum gönder (10–15 Hz civarı)
+    // camera follow
+    const camDist = 3.6;
+    const cx = local.group.position.x - Math.sin(local.yaw) * camDist;
+    const cz = local.group.position.z - Math.cos(local.yaw) * camDist;
+    camera.position.lerp(new THREE.Vector3(cx, 2.0, cz), 0.15);
+    camera.lookAt(local.group.position.x, local.group.position.y + 0.8, local.group.position.z);
+
+    // network state
     netAcc += dt;
     if (netAcc > 0.08 && local.id) {
       netAcc = 0;
       socket.emit("state", {
-        x: local.obj.position.x,
+        x: local.group.position.x,
         y: 0,
-        z: local.obj.position.z,
-        ry: local.yaw,
-        hp: local.hp
+        z: local.group.position.z,
+        ry: local.yaw
       });
     }
 
-    // HUD
-    dbg.textContent = `id:${local.id ?? "-"}  pos:${local.obj.position.x.toFixed(1)}, ${local.obj.position.z.toFixed(1)}  players:${1+remotes.size}`;
+    // hotspot checks
+    checkHotspots();
+
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
-  let netAcc = 0;
   requestAnimationFrame(tick);
 
-  // Resize
+  // resize
   window.addEventListener("resize", () => {
     renderer.setSize(root.clientWidth, root.clientHeight);
     camera.aspect = root.clientWidth / root.clientHeight;

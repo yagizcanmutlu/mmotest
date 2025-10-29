@@ -3,32 +3,58 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>JS 3D MORPG – Vertical Slice</title>
+  <title>Byzas Agora – Sosyal Hub (MVP)</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    html,body{height:100%;background:#000;font-family:system-ui,Arial}
+    html,body{height:100%;background:#000;font-family:Inter,system-ui,Arial}
     #root{height:100dvh;width:100vw;overflow:hidden;position:relative}
-    .hud{position:absolute;top:16px;left:16px;display:flex;gap:12px;align-items:center;z-index:9}
-    .avatar{width:64px;height:64px;border-radius:50%;border:3px solid #5b6; background:#333 url('https://picsum.photos/100') center/cover no-repeat;}
-    .bar{width:200px;height:18px;border:2px solid #1a1; border-radius:4px; background:#233}
-    .bar>i{display:block;height:100%;width:100%;background:linear-gradient(#8ef,#4f4);transform-origin:left center}
-    .cta{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:8;background:rgba(0,0,0,.5);backdrop-filter:blur(4px)}
-    .cta button{padding:14px 20px;border-radius:10px;border:0;font-weight:700;cursor:pointer}
-    .debug{position:absolute;bottom:10px;left:10px;color:#9cf;font-size:12px;opacity:.8}
+    .hud{position:absolute;top:14px;left:14px;display:flex;gap:12px;align-items:center;z-index:9}
+    .logo{color:#8ef;font-weight:800;letter-spacing:.5px;text-shadow:0 0 8px #48f}
+    .points{padding:6px 10px;border:1px solid #2a5; border-radius:8px;color:#aef;background:rgba(10,30,18,.35);backdrop-filter:blur(4px)}
+    .cta{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;background:rgba(0,0,0,.55);backdrop-filter:blur(4px)}
+    .card{padding:18px 16px;background:rgba(8,10,20,.9);border:1px solid #234; border-radius:14px; width:320px; display:flex; flex-direction:column; gap:10px}
+    .card h1{color:#9cf;font-size:18px}
+    .card input{padding:10px;border-radius:10px;border:1px solid #345;background:#0a0f14;color:#cfe}
+    .card button{padding:12px;border-radius:12px;border:0;font-weight:700;background:#1d8f4a;color:#eafff0;cursor:pointer}
+    .chat{position:absolute;left:14px;bottom:12px;width:340px;z-index:9}
+    .chat-log{height:160px;overflow:auto;background:rgba(5,7,12,.55);border:1px solid #223;border-radius:10px;padding:8px;color:#cfe}
+    .chat-log p{margin:4px 0}
+    .chat-input{margin-top:6px;display:flex;gap:6px}
+    .chat-input input{flex:1;padding:10px;border-radius:10px;border:1px solid #345;background:#0a0f14;color:#cfe}
+    .chat-input button{padding:10px 12px;border-radius:10px;border:0;background:#29549b;color:#e7f0ff;cursor:pointer}
+    .hint{position:absolute;right:14px;bottom:12px;color:#7da;font-size:12px;opacity:.8;z-index:9;background:rgba(0,0,0,.35);padding:6px 8px;border-radius:8px;border:1px solid #123}
+    .floating{position:absolute;top:60px;left:50%;transform:translateX(-50%);color:#aff;text-shadow:0 0 8px #0ff;z-index:9;font-weight:700}
   </style>
   <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <!-- Aynı origin’den Socket.IO -->
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
   <div id="root">
     <div class="hud">
-      <div class="avatar"></div>
-      <div class="bar"><i id="hpFill"></i></div>
+      <div class="logo">BYZAS&nbsp;AGORA</div>
+      <div class="points" id="points">Points: 0</div>
     </div>
+
     <div class="cta" id="cta">
-      <button id="playBtn">Tıklayıp oyna (WASD + Fare)</button>
+      <div class="card">
+        <h1>Agora'ya katıl</h1>
+        <input id="nameInput" placeholder="Görünen adın (ör. Yağız)" maxlength="20" />
+        <button id="playBtn">Giriş (WASD + Fare)</button>
+        <small style="color:#8aa">Kısayol emote: 1-6 • Chat: Enter • Çıkış: Esc</small>
+      </div>
     </div>
-    <div class="debug" id="dbg"></div>
+
+    <div class="chat">
+      <div class="chat-log" id="chatLog"></div>
+      <div class="chat-input">
+        <input id="chatText" placeholder="Mesaj yaz… (/wave, /dance …)" />
+        <button id="chatSend">Gönder</button>
+      </div>
+    </div>
+
+    <div class="hint">Emote: 1-Wave, 2-Dance, 3-Sit, 4-Clap, 5-Point, 6-Cheer</div>
+    <div class="floating" id="toast" style="display:none"></div>
   </div>
   <script src="client.js"></script>
 </body>
