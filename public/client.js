@@ -163,14 +163,143 @@
 
   // Hotspots & Planets (HALO YOK)
   const hotspotInfo = new Map();
+  // === SpaceBase Disc (yalnızca hotspot diski yerine) =========================
+  const _spaceBaseHotspotMeshes = new Map();
+
+  function _createSpaceBaseDiscMesh(radius, opts = {}) {
+    const params = {
+      tilesPerUnit: 3.0,
+      groove: 0.03,
+      bevel: 0.015,
+      stripeDensity: 6.0,
+      emissiveK: 1.25,
+      caution: new THREE.Color("#ffd166"),
+      baseColor: 0x131a24,
+      ...opts
+    };
+
+    // Standart malzeme: ışık + fog uyumlu
+    const mat = new THREE.MeshStandardMaterial({
+      color: params.baseColor,
+      roughness: 0.95,
+      metalness: 0.08
+    });
+
+    // Shader patch (sadece diffuse üstüne overlay)
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.uniforms.uTiles = { value: params.tilesPerUnit };
+      shader.uniforms.uGroove = { value: params.groove };
+      shader.uniforms.uBevel = { value: params.bevel };
+      shader.uniforms.uStripeDensity = { value: params.stripeDensity };
+      shader.uniforms.uEmissiveK = { value: params.emissiveK };
+      shader.uniforms.uCaution = { value: params.caution };
+
+      // worldPos'u fragmente taşı
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `
+          #include <common>
+          varying vec3 vWPos;
+        `)
+        .replace('#include <worldpos_vertex>', `
+          #include <worldpos_vertex>
+          vWPos = worldPosition.xyz;
+        `);
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `
+          #include <common>
+          varying vec3 vWPos;
+          uniform float uTime, uTiles, uGroove, uBevel, uStripeDensity, uEmissiveK;
+          uniform vec3 uCaution;
+
+          float hash21(vec2 p){
+            p = fract(p*vec2(123.34,456.21));
+            p += dot(p, p+45.32);
+            return fract(p.x*p.y);
+          }
+          float grooveMask(vec2 p){
+            vec2 gv = fract(p) - 0.5;
+            vec2 dv = (0.5 - abs(gv));
+            float edge = min(dv.x, dv.y);
+            return 1.0 - smoothstep(uGroove-uBevel, uGroove+uBevel, edge);
+          }
+          float cautionStripes(vec2 p){
+            vec2 cell = floor(p);
+            vec2 gv = fract(p) - 0.5;
+            float rnd = hash21(cell);
+            if (rnd < 0.66) return 0.0;
+            float dens = uStripeDensity + floor(rnd*3.0);
+            float dir = (rnd>0.82)? 1.0 : -1.0;
+            float ramp = (abs(gv.x)>abs(gv.y)) ? gv.y : gv.x;
+            float s = fract(ramp*dens + (uTime*0.28)*dir);
+            float bar = step(0.5, s);
+            float edgeBand = smoothstep(0.12, 0.10, min(0.5-abs(gv.x), 0.5-abs(gv.y)));
+            return bar * edgeBand;
+          }
+        `)
+        .replace('#include <map_fragment>', `
+          #include <map_fragment>
+          // --- SpaceBase overlay (dünya XZ tabanlı) ---
+          vec2 p = vWPos.xz * uTiles;
+
+          float g = grooveMask(p);
+          diffuseColor.rgb *= (1.0 - g*0.18);
+
+          float s = cautionStripes(p);
+          float pulse = 0.6 + 0.4 * sin(uTime*3.0 + (p.x+p.y));
+          vec3 emiss = uCaution * (s * uEmissiveK * pulse);
+
+          // Uyarı boyasıyla hafif karışım
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*0.75 + uCaution*0.25, s*0.85);
+          diffuseColor.rgb += emiss;
+        `);
+
+      // runtime için sakla
+      mat.userData._shader = shader;
+    };
+
+    const geo = new THREE.CircleGeometry(radius, 96);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI/2;
+    mesh.position.y = 0.01;
+    mesh.receiveShadow = true;
+
+    // animasyon (zaman)
+    mesh.onBeforeRender = (renderer, scene, camera) => {
+      const sh = mesh.material.userData._shader;
+      if (sh) sh.uniforms.uTime.value = performance.now()/1000;
+    };
+
+    return mesh;
+  }
+
+  // === ESKİ mavi silindir yerine bunu kullanıyoruz ============================
   function addHotspotDisk(name, x, z, r){
-    const m = new THREE.Mesh(
-      new THREE.CylinderGeometry(r, r, 0.2, 48),
-      new THREE.MeshStandardMaterial({ color:0x233a88, emissive:0x2244ff, emissiveIntensity:0.7, transparent:true, opacity:0.45 })
-    );
-    m.position.set(x,0.1,z); scene.add(m);
+    // Önce varsa eskiyi temizle
+    const prev = _spaceBaseHotspotMeshes.get(name);
+    if (prev) {
+      scene.remove(prev);
+      prev.geometry.dispose();
+      if (prev.material.map) prev.material.map.dispose?.();
+      prev.material.dispose();
+      _spaceBaseHotspotMeshes.delete(name);
+    }
+
+    // Yeni: kaplamalı disk
+    const disc = _createSpaceBaseDiscMesh(r, {
+      tilesPerUnit: 2.8,
+      stripeDensity: 7.0,
+      emissiveK: 1.35
+    });
+    disc.position.set(x, 0.01, z);
+    scene.add(disc);
+    _spaceBaseHotspotMeshes.set(name, disc);
+
+    // Hotspot mantığı (çarpışma/puan) eskisi gibi çalışsın
     hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
   }
+
 
   const planetMeshes = [];
   const moonTex = new THREE.TextureLoader().load("https://happy358.github.io/Images/textures/lunar_color.jpg", t=>{
