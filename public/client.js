@@ -57,8 +57,8 @@
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     ctx.font = "bold 22px Arial";
-    const w = Math.max(80, ctx.measureText(label).width + padX*2);
-    const h = 30 + padY*2;
+    const w = Math.max(100, ctx.measureText(label).width + padX*2);
+    const h = 32 + padY*2;
     canvas.width = w; canvas.height = h;
     ctx.font = "bold 22px Arial";
     ctx.fillStyle = "rgba(0,0,0,0.55)";
@@ -67,19 +67,19 @@
     ctx.fillRect(0,0,w,h);
     ctx.strokeRect(0,0,w,h);
     ctx.fillStyle = color;
-    ctx.fillText(label, padX, 24);
+    ctx.fillText(label, padX, 26);
     const tex = new THREE.CanvasTexture(canvas);
     tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
     const mat = new THREE.SpriteMaterial({ map: tex, depthWrite:false, depthTest:false });
     const sp = new THREE.Sprite(mat);
     sp.renderOrder = 9999;
-    sp.scale.set(w/120, h/120, 1);      // daha büyük
-    sp.position.set(0, 2.1, 0);         // baş üstü
+    sp.scale.set(w/90, h/90, 1);       // daha belirgin
+    sp.position.set(0, 2.15, 0);       // baş üstü
     return sp;
   }
   function showToast(text){ toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
 
-  // Character
+  // Stylized Character
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff) {
     const grp = new THREE.Group();
 
@@ -168,23 +168,135 @@
     hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
   }
 
+  // Gezegen + Halo parçacıkları
   const planetMeshes = [];
+  const planetHalos = [];
+  const gu = { time: { value: 0 } };
   const moonTex = new THREE.TextureLoader().load("https://happy358.github.io/Images/textures/lunar_color.jpg", t=>{
     t.colorSpace = THREE.SRGBColorSpace;
   });
+
+  function createPlanetHalo({ inner=8, outer=24, count=8000 } = {}){
+    // Verdiğin koddaki yaklaşımın hafifletilmiş sürümü
+    const pts = [];
+    const sizes = [];
+    const shift = [];
+
+    // küresel parça
+    for(let i=0;i<count*0.4;i++){
+      const v = new THREE.Vector3().randomDirection().multiplyScalar(Math.random()*0.5 + inner*0.95);
+      pts.push(v.x, v.y*0.25, v.z);
+      sizes.push(Math.random()*1.5 + 0.5);
+      shift.push(
+        Math.random()*Math.PI,
+        Math.random()*Math.PI*2,
+        (Math.random()*0.9 + 0.1) * Math.PI * 0.08,
+        Math.random()*0.9 + 0.1
+      );
+    }
+    // halka/ring
+    for(let i=0;i<count*0.6;i++){
+      const rand = Math.pow(Math.random(), 1.5);
+      const radius = Math.sqrt(outer*outer * rand + (1 - rand) * inner*inner);
+      const theta = Math.random() * Math.PI * 2;
+      const y = (Math.random()-0.5) * 0.8; // ince kalınlık
+      const v = new THREE.Vector3(
+        Math.cos(theta) * radius,
+        y,
+        Math.sin(theta) * radius
+      );
+      pts.push(v.x, v.y, v.z);
+      sizes.push(Math.random()*1.5 + 0.5);
+      shift.push(
+        Math.random()*Math.PI,
+        Math.random()*Math.PI*2,
+        (Math.random()*0.9 + 0.1) * Math.PI * 0.08,
+        Math.random()*0.9 + 0.1
+      );
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    g.setAttribute("sizes",    new THREE.Float32BufferAttribute(sizes, 1));
+    g.setAttribute("shift",    new THREE.Float32BufferAttribute(shift, 4));
+
+    const m = new THREE.PointsMaterial({
+      size: 0.12,
+      transparent: true,
+      depthTest: false,
+      blending: THREE.AdditiveBlending,
+      vertexColors: false
+    });
+
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.time = gu.time;
+      shader.vertexShader = `
+        uniform float time;
+        attribute float sizes;
+        attribute vec4 shift;
+        varying vec3 vColor;
+        ${shader.vertexShader}
+      `.replace(
+        `gl_PointSize = size;`,
+        `gl_PointSize = size * sizes;`
+      ).replace(
+        `#include <color_vertex>`,
+        `#include <color_vertex>
+          float d = length(abs(position) / vec3(${outer.toFixed(1)}, ${outer.toFixed(1)*0.25}, ${outer.toFixed(1)}));
+          d = clamp(d, 0., 1.);
+          vColor = mix(vec3(227.,155.,0.), vec3(100.,50.,255.), d) / 255.;
+        `
+      ).replace(
+        `#include <begin_vertex>`,
+        `#include <begin_vertex>
+          float PI2 = 6.28318530718;
+          float t = time;
+          float moveT = mod(shift.x + shift.z * t, PI2);
+          float moveS = mod(shift.y + shift.z * t, PI2);
+          transformed += vec3(cos(moveS) * sin(moveT), cos(moveT), sin(moveS) * sin(moveT)) * shift.w;
+        `
+      );
+      shader.fragmentShader = `
+        varying vec3 vColor;
+        ${shader.fragmentShader}
+      `.replace(
+        `#include <clipping_planes_fragment>`,
+        `#include <clipping_planes_fragment>
+          float d = length(gl_PointCoord.xy - 0.5);
+        `
+      ).replace(
+        `vec4 diffuseColor = vec4( diffuse, opacity );`,
+        `vec4 diffuseColor = vec4( vColor, smoothstep(0.5, 0.1, d) );`
+      );
+    };
+
+    const p = new THREE.Points(g, m);
+    p.renderOrder = 10000;
+    return p;
+  }
+
   function addPlanet(p){
+    // Gezegen gövdesi (zemin ÜSTÜ)
     const geo = new THREE.SphereGeometry(p.radius, 40, 40);
     const mat = new THREE.MeshPhongMaterial({ color: p.color, map: moonTex, bumpMap: moonTex, bumpScale: 0.6 });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(p.x, p.radius + 0.1, p.z); // ZEMİN ÜSTÜNE ALINDI
+    mesh.position.set(p.x, p.radius + 0.1, p.z);
     mesh.rotation.x = -Math.PI/10;
     mesh.castShadow = true; mesh.receiveShadow = true;
+
+    // İsim etiketi
     const label = makeNameSprite(p.name, "#9ef");
     label.position.set(0, p.radius + 0.8, 0);
     mesh.add(label);
+
+    // Halo/partikül (gezegen child'ı, merkez 0,0,0)
+    const halo = createPlanetHalo({ inner: p.radius + 2, outer: p.radius + 10, count: 7000 });
+    mesh.add(halo);
+    planetHalos.push(halo);
+
     scene.add(mesh);
     planetMeshes.push({ name:p.name, mesh, label });
-    hotspotInfo.set(`Planet:${p.name}`, { pos:new THREE.Vector3(p.x,0,p.z), r:p.r });
+    hotspotInfo.set(`Planet:${p.name}`, { pos:new THREE.Vector3(p.x,0,p.z), r:p.r || (p.radius + 10) });
   }
 
   // Input
@@ -204,7 +316,7 @@
   });
   window.addEventListener("keyup", (e)=> keys.delete(e.code));
 
-  // Pointer-lock look (desktop) — yaw yönü düzeltildi
+  // Pointer-lock look (desktop) — sağa hareket sağa bakış
   playBtn.addEventListener("click", () => {
     cta.style.display = "none";
     const desired = (nameInput.value||"").trim().slice(0,20);
@@ -216,7 +328,7 @@
   });
   window.addEventListener("mousemove", (e) => {
     if (document.pointerLockElement === renderer.domElement && !chatFocus) {
-      local.yaw += e.movementX * 0.0025; // <<< terslik giderildi
+      local.yaw += e.movementX * 0.0025; // pozitif sağa
     }
   });
 
@@ -239,7 +351,7 @@
     camDist = Math.min(10, Math.max(2, camDist));
   }, {passive:true});
 
-  // Mobile joystick (solda) — chat artık sağda olduğu için çakışma yok
+  // Mobile joystick (solda)
   let joyActive = false, joyCenter = {x:0,y:0}, joyVec = {x:0,y:0};
   function setStick(x,y){ stick.style.transform = `translate(${x}px, ${y}px)`; }
   function joyReset(){ joyActive=false; joyVec.x=0; joyVec.y=0; setStick(-50,-50); }
@@ -332,6 +444,7 @@
   });
 
   // Loop
+  const clock = new THREE.Clock();
   let last = performance.now();
   let netAcc = 0;
   const tmpV = new THREE.Vector3();
@@ -348,7 +461,7 @@
   function tick(now){
     const dt = Math.min(0.05, (now-last)/1000); last = now;
 
-    // Yön — fare nereye bakıyorsa W o yöne
+    // Yön — FARE NEREYE BAKIYORSA W O YÖNE
     const kForward = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0);
     const kStrafe  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0);
     let forward = kForward + joyVec.y;
@@ -360,10 +473,10 @@
     const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (norm>1 ? 1/norm : 1);
 
     if (forward || strafe) {
-      // Eksen dönüşümü (yaw): local -> world
+      // DOĞRU dönüşüm: worldDir = forward*(sin,0,cos) + strafe*(cos,0,-sin)
       const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
-      const dx = strafe * cos - forward * sin;
-      const dz = strafe * sin + forward * cos;
+      const dx = forward * sin + strafe * cos;
+      const dz = forward * cos - strafe * sin;
       local.group.position.x += dx * spd * dt;
       local.group.position.z += dz * spd * dt;
     }
@@ -372,12 +485,15 @@
     local.group.rotation.y = local.yaw;
 
     // Kamera & zoom
-    const cx = local.group.position.x - Math.sin(local.yaw) * camDist;
-    const cz = local.group.position.z - Math.cos(local.yaw) * camDist;
-    camera.position.lerp(new THREE.Vector3(cx, 2.0, cz), 0.15);
+    const camX = local.group.position.x - Math.sin(local.yaw) * camDist;
+    const camZ = local.group.position.z - Math.cos(local.yaw) * camDist;
+    camera.position.lerp(new THREE.Vector3(camX, 2.0, camZ), 0.15);
     camera.lookAt(local.group.position.x, local.group.position.y + 0.8, local.group.position.z);
 
-    // Planets
+    // Gezegen gövdeleri & halo anim
+    const t = clock.getElapsedTime() * 0.5;
+    gu.time.value = t * Math.PI;
+    for (const h of planetHalos) h.rotation.y += 0.0008; // yavaş ring dönüşü
     for (const p of planetMeshes) p.mesh.rotation.y -= 0.0012;
 
     // Ağ
