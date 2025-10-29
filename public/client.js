@@ -163,29 +163,28 @@
 
   // Hotspots & Planets (HALO YOK)
   const hotspotInfo = new Map();
-  // === SpaceBase Disc (yalnızca hotspot diski yerine) =========================
+  // === SpaceBase Disc + LED Ring (hotspot pad) ================================
   const _spaceBaseHotspotMeshes = new Map();
 
   function _createSpaceBaseDiscMesh(radius, opts = {}) {
     const params = {
-      tilesPerUnit: 3.0,
+      tilesPerUnit: 2.8,
       groove: 0.03,
       bevel: 0.015,
-      stripeDensity: 6.0,
-      emissiveK: 1.25,
+      stripeDensity: 7.0,
+      emissiveK: 1.35,
       caution: new THREE.Color("#ffd166"),
       baseColor: 0x131a24,
       ...opts
     };
 
-    // Standart malzeme: ışık + fog uyumlu
     const mat = new THREE.MeshStandardMaterial({
       color: params.baseColor,
       roughness: 0.95,
       metalness: 0.08
     });
 
-    // Shader patch (sadece diffuse üstüne overlay)
+    // shader overlay (paneller + neon şerit)
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = { value: 0 };
       shader.uniforms.uTiles = { value: params.tilesPerUnit };
@@ -195,7 +194,6 @@
       shader.uniforms.uEmissiveK = { value: params.emissiveK };
       shader.uniforms.uCaution = { value: params.caution };
 
-      // worldPos'u fragmente taşı
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `
           #include <common>
@@ -240,7 +238,6 @@
         `)
         .replace('#include <map_fragment>', `
           #include <map_fragment>
-          // --- SpaceBase overlay (dünya XZ tabanlı) ---
           vec2 p = vWPos.xz * uTiles;
 
           float g = grooveMask(p);
@@ -250,53 +247,60 @@
           float pulse = 0.6 + 0.4 * sin(uTime*3.0 + (p.x+p.y));
           vec3 emiss = uCaution * (s * uEmissiveK * pulse);
 
-          // Uyarı boyasıyla hafif karışım
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*0.75 + uCaution*0.25, s*0.85);
           diffuseColor.rgb += emiss;
         `);
 
-      // runtime için sakla
       mat.userData._shader = shader;
     };
 
-    const geo = new THREE.CircleGeometry(radius, 96);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.rotation.x = -Math.PI/2;
-    mesh.position.y = 0.01;
-    mesh.receiveShadow = true;
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 96), mat);
+    disc.rotation.x = -Math.PI/2;
+    disc.position.y = 0.01;
+    disc.receiveShadow = true;
 
-    // animasyon (zaman)
-    mesh.onBeforeRender = (renderer, scene, camera) => {
-      const sh = mesh.material.userData._shader;
-      if (sh) sh.uniforms.uTime.value = performance.now()/1000;
+    // LED ring (additive parlayan çember)
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius*0.94, radius*1.02, 128),
+      new THREE.MeshBasicMaterial({
+        color: 0x66ccff,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = 0.015;
+
+    const group = new THREE.Group();
+    group.add(disc, ring);
+
+    group.onBeforeRender = () => {
+      const t = performance.now()*0.001;
+      // shader zamanı
+      const sh = disc.material.userData._shader;
+      if (sh) sh.uniforms.uTime.value = t;
+      // LED nefes efekti
+      ring.material.opacity = 0.35 + 0.35*(0.5+0.5*Math.sin(t*2.6));
     };
 
-    return mesh;
+    return group;
   }
 
-  // === ESKİ mavi silindir yerine bunu kullanıyoruz ============================
   function addHotspotDisk(name, x, z, r){
-    // Önce varsa eskiyi temizle
+    // öncekini temizle
     const prev = _spaceBaseHotspotMeshes.get(name);
-    if (prev) {
-      scene.remove(prev);
-      prev.geometry.dispose();
-      if (prev.material.map) prev.material.map.dispose?.();
-      prev.material.dispose();
-      _spaceBaseHotspotMeshes.delete(name);
-    }
+    if (prev) { scene.remove(prev); prev.traverse(o=>{
+      if (o.isMesh){ o.geometry.dispose(); o.material.dispose?.(); }
+    }); }
 
-    // Yeni: kaplamalı disk
-    const disc = _createSpaceBaseDiscMesh(r, {
-      tilesPerUnit: 2.8,
-      stripeDensity: 7.0,
-      emissiveK: 1.35
-    });
-    disc.position.set(x, 0.01, z);
-    scene.add(disc);
-    _spaceBaseHotspotMeshes.set(name, disc);
+    const grp = _createSpaceBaseDiscMesh(r);
+    grp.position.set(x, 0, z);
+    scene.add(grp);
 
-    // Hotspot mantığı (çarpışma/puan) eskisi gibi çalışsın
+    _spaceBaseHotspotMeshes.set(name, grp);
     hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
   }
 
@@ -404,38 +408,83 @@
 
   // Sockets
   socket.on("bootstrap", ({ you, players, hotspots, planets }) => {
-    local.id = you.id; local.name = you.name; local.points = you.points||0;
+    // --- senin mevcut kullanıcı bootstrap'in ---
+    local.id = you.id; 
+    local.name = you.name; 
+    local.points = you.points || 0;
     pointsEl.textContent = `Points: ${local.points}`;
     local.parts.group.position.set(you.x, 0, you.z);
     local.yaw = you.ry || 0;
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
-    (hotspots||[]).forEach(h=>{
-      if (h.name==="Totem") addHotspotDisk(h.name, h.x, h.z, h.r);
-      else hotspotInfo.set(h.name, { pos:new THREE.Vector3(h.x,0,h.z), r:h.r });
+    // --- PAD yerleştirme (Totem filtresi yok) ---
+    const PAD_KEYWORDS = ["totem","spawn","pad","platform","agora","hub","dock","deck"];
+    let padCount = 0;
+
+    (hotspots || []).forEach(h => {
+      const name = h.name || "";
+      const r = h.r || 12;
+      const isPad = PAD_KEYWORDS.some(k => name.toLowerCase().includes(k));
+
+      if (isPad) {
+        addHotspotDisk(name, h.x, h.z, r);
+        padCount++;
+      }
+      // hotspot tetik/puan mantığı için veriyi her durumda yaz
+      hotspotInfo.set(name, { pos: new THREE.Vector3(h.x, 0, h.z), r });
     });
-    (planets||[]).forEach(addPlanet);
-    (players||[]).forEach(p=>{ const R = ensureRemote(p); updateNameTag(R, p.name || R.name); });
+
+    // Sahne pad göndermediyse: oyuncunun spawn noktasına bir tane bırak
+    if (padCount === 0) {
+      const p = local.parts.group.position;
+      addHotspotDisk("AgoraPad", p.x, p.z, 12);
+    }
+
+    // --- gezegenler & oyuncular ---
+    (planets || []).forEach(addPlanet);
+    (players || []).forEach(p => { 
+      const R = ensureRemote(p); 
+      updateNameTag(R, p.name || R.name); 
+    });
   });
 
-  socket.on("player-joined", (p)=>{ if (p.id!==local.id){ const R = ensureRemote(p); updateNameTag(R, p.name || R.name); }});
-  socket.on("player-left", (id)=>{ const R=remotes.get(id); if (R){ scene.remove(R.parts.group); remotes.delete(id);} });
-  socket.on("player:name", ({id,name})=>{
-    if (id===local.id){ local.name = name; updateNameTag(local, name); }
-    const R=remotes.get(id); if (R) updateNameTag(R, name);
+  socket.on("player-joined", (p) => { 
+    if (p.id !== local.id){ 
+      const R = ensureRemote(p); 
+      updateNameTag(R, p.name || R.name); 
+    }
+  });
+
+  socket.on("player-left", (id) => { 
+    const R = remotes.get(id); 
+    if (R){ scene.remove(R.parts.group); remotes.delete(id); } 
+  });
+
+  socket.on("player:name", ({id,name}) => {
+    if (id === local.id){ 
+      local.name = name; 
+      updateNameTag(local, name); 
+    }
+    const R = remotes.get(id); 
+    if (R) updateNameTag(R, name);
   });
 
   socket.on("chat:msg", ({ from, text }) => {
     const p = document.createElement("p");
     p.innerHTML = `<b>[${from.rank}] ${from.name}:</b> ${text}`;
-    chatLog.appendChild(p); chatLog.scrollTop = chatLog.scrollHeight;
+    chatLog.appendChild(p); 
+    chatLog.scrollTop = chatLog.scrollHeight;
   });
 
   socket.on("points:update", ({ total, delta, reason }) => {
-    local.points = total; pointsEl.textContent = `Points: ${local.points}`;
+    local.points = total; 
+    pointsEl.textContent = `Points: ${local.points}`;
     showToast(`${delta>0?'+':''}${delta}  ${reason}`);
   });
-  socket.on("quest:update", ({code, progress, goal}) => showToast(`Görev: ${code} ${progress}/${goal}`));
+
+  socket.on("quest:update", ({code, progress, goal}) => 
+    showToast(`Görev: ${code} ${progress}/${goal}`)
+  );
 
   // ==== Emote animasyonları (farklı hareketler) ====
   const emoteTokens = new Map();
