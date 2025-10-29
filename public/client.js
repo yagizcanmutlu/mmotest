@@ -16,6 +16,10 @@
 
   const socket = io();
 
+  // Device: joystick sadece mobilde
+  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  if (joy) joy.style.display = isTouch ? "block" : "none";
+
   // THREE
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(root.clientWidth, root.clientHeight);
@@ -79,7 +83,7 @@
   }
   function showToast(text){ toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
 
-  // Stylized Character
+  // Stylized Character (parça referanslarıyla)
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff) {
     const grp = new THREE.Group();
 
@@ -120,36 +124,36 @@
     dome.position.set(0,1.6,0); grp.add(dome);
 
     grp.scale.set(0.20,0.20,0.20);
-    return { group: grp, torso };
+    return { group: grp, torso, head, armL, armR, legL, legR };
   }
 
   // Local/Remote
-  const local = { id:null, name:null, yaw:0, group:null, torso:null, tag:null, points:0, visited:{} };
+  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{} };
   {
-    const { group, torso } = buildStylizedChar(0xffe4c4);
-    local.group = group; local.torso = torso; scene.add(group);
+    const parts = buildStylizedChar(0xffe4c4);
+    local.parts = parts; scene.add(parts.group);
   }
   const remotes = new Map();
   function ensureRemote(p){
     let R = remotes.get(p.id);
     if (!R) {
-      const { group, torso } = buildStylizedChar(0xadd8e6);
-      group.position.set(p.x, 0, p.z);
+      const parts = buildStylizedChar(0xadd8e6);
+      parts.group.position.set(p.x, 0, p.z);
       const tag = makeNameSprite(p.name || `Yogi-${p.id.slice(0,4)}`);
-      group.add(tag);
-      R = { group, torso, tag, name: p.name || `Yogi-${p.id.slice(0,4)}` };
-      scene.add(group);
+      parts.group.add(tag);
+      R = { parts, tag, name: p.name || `Yogi-${p.id.slice(0,4)}` };
+      scene.add(parts.group);
       remotes.set(p.id, R);
     }
     return R;
   }
   function updateNameTag(holder, name){
     if (holder.tag) {
-      holder.group.remove(holder.tag);
+      holder.parts.group.remove(holder.tag);
       holder.tag.material.map.dispose();
     }
     holder.tag = makeNameSprite(name);
-    holder.group.add(holder.tag);
+    holder.parts.group.add(holder.tag);
     holder.name = name;
   }
   function getDisplayName(id){
@@ -157,7 +161,7 @@
     const R = remotes.get(id); return (R && R.name) || `Yogi-${String(id).slice(0,4)}`;
   }
 
-  // Hotspots & Planets (HALO/partikül YOK)
+  // Hotspots & Planets (HALO YOK)
   const hotspotInfo = new Map();
   function addHotspotDisk(name, x, z, r){
     const m = new THREE.Mesh(
@@ -176,7 +180,7 @@
     const geo = new THREE.SphereGeometry(p.radius, 40, 40);
     const mat = new THREE.MeshPhongMaterial({ color: p.color, map: moonTex, bumpMap: moonTex, bumpScale: 0.6 });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(p.x, p.radius + 0.1, p.z); // zemin ÜSTÜ
+    mesh.position.set(p.x, p.radius + 0.1, p.z);
     mesh.rotation.x = -Math.PI/10;
     mesh.castShadow = true; mesh.receiveShadow = true;
 
@@ -201,9 +205,9 @@
     keys.add(e.code);
     const em = { Digit1:"wave", Digit2:"dance", Digit3:"sit", Digit4:"clap", Digit5:"point", Digit6:"cheer" };
     if (em[e.code]) socket.emit("emote:play", em[e.code]);
-    // Q=sola, E=sağa döndür (mouse mantığıyla uyumlu)
-    if (e.code === "KeyQ") local.yaw -= 0.06;
-    if (e.code === "KeyE") local.yaw += 0.06;
+    // Q = sola, E = sağa (mouse ile tutarlı)
+    if (e.code === "KeyQ") local.yaw += 0.06;
+    if (e.code === "KeyE") local.yaw -= 0.06;
   });
   window.addEventListener("keyup", (e)=> keys.delete(e.code));
 
@@ -219,21 +223,23 @@
   });
   window.addEventListener("mousemove", (e) => {
     if (document.pointerLockElement === renderer.domElement && !chatFocus) {
-      local.yaw -= e.movementX * 0.0025; // <<< TERSİ ÇEVRİLDİ
+      local.yaw -= e.movementX * 0.0025; // sağa hareket → sağa bakış
     }
   });
 
   // Drag look (sağ alan) — aynı yönde
   let lookActive = false, lastLX = 0;
   function lookStart(x){ lookActive = true; lastLX = x; }
-  function lookMove(x){ if (!lookActive) return; const dx = x - lastLX; lastLX = x; local.yaw -= dx * 0.003; } // <<< TERSİ ÇEVRİLDİ
+  function lookMove(x){ if (!lookActive) return; const dx = x - lastLX; lastLX = x; local.yaw -= dx * 0.003; }
   function lookEnd(){ lookActive = false; }
-  lookpad.addEventListener("mousedown", (e)=>lookStart(e.clientX));
-  window.addEventListener("mousemove", (e)=>lookMove(e.clientX));
-  window.addEventListener("mouseup", lookEnd);
-  lookpad.addEventListener("touchstart", (e)=>{ const t=e.touches[0]; if (t) lookStart(t.clientX); }, {passive:false});
-  lookpad.addEventListener("touchmove",  (e)=>{ const t=e.touches[0]; if (t) lookMove(t.clientX); }, {passive:false});
-  lookpad.addEventListener("touchend", lookEnd);
+  if (lookpad){
+    lookpad.addEventListener("mousedown", (e)=>lookStart(e.clientX));
+    window.addEventListener("mousemove", (e)=>lookMove(e.clientX));
+    window.addEventListener("mouseup", lookEnd);
+    lookpad.addEventListener("touchstart", (e)=>{ const t=e.touches[0]; if (t) lookStart(t.clientX); }, {passive:false});
+    lookpad.addEventListener("touchmove",  (e)=>{ const t=e.touches[0]; if (t) lookMove(t.clientX); }, {passive:false});
+    lookpad.addEventListener("touchend", lookEnd);
+  }
 
   // Zoom
   let camDist = 3.6;
@@ -242,32 +248,36 @@
     camDist = Math.min(10, Math.max(2, camDist));
   }, {passive:true});
 
-  // Mobile joystick (solda)
+  // Mobile joystick (solda) — SADECE MOBİL ve merkezde
   let joyActive = false, joyCenter = {x:0,y:0}, joyVec = {x:0,y:0};
-  function setStick(x,y){ stick.style.transform = `translate(${x}px, ${y}px)`; }
-  function joyReset(){ joyActive=false; joyVec.x=0; joyVec.y=0; setStick(-50,-50); }
-  joyReset();
-  function joyStart(cx,cy){ joyActive=true; const rect = joy.getBoundingClientRect(); joyCenter.x = rect.left + rect.width/2; joyCenter.y = rect.top + rect.height/2; updateJoy(cx,cy); }
-  function updateJoy(px,py){
-    const dx = px - joyCenter.x, dy = py - joyCenter.y;
-    const rMax = 44, len = Math.hypot(dx,dy) || 1, k = Math.min(1, rMax/len);
-    const nx = dx * k, ny = dy * k;
-    setStick(nx-28, ny-28);
-    joyVec.x = nx / rMax;      // strafe
-    joyVec.y = -ny / rMax;     // forward
+  const stickHalf = () => (stick ? stick.getBoundingClientRect().width/2 : 0);
+  function setStick(px,py){ if (!stick) return; stick.style.transform = `translate(${px - stickHalf()}px, ${py - stickHalf()}px)`; }
+  function joyReset(){ joyActive=false; joyVec.x=0; joyVec.y=0; setStick(0,0); }
+  if (isTouch && joy && stick){
+    // başlangıçta tam merkez
+    setTimeout(joyReset, 0);
+    function joyStart(cx,cy){ joyActive=true; const rect = joy.getBoundingClientRect(); joyCenter.x = rect.left + rect.width/2; joyCenter.y = rect.top + rect.height/2; updateJoy(cx,cy); }
+    function updateJoy(px,py){
+      const dx = px - joyCenter.x, dy = py - joyCenter.y;
+      const rMax = 44, len = Math.hypot(dx,dy) || 1, k = Math.min(1, rMax/len);
+      const nx = dx * k, ny = dy * k;
+      setStick(nx, ny);
+      joyVec.x = nx / rMax;      // +sağ
+      joyVec.y = -ny / rMax;     // +ileri
+    }
+    joy.addEventListener("mousedown", (e)=>{ e.preventDefault(); joyStart(e.clientX,e.clientY); });
+    window.addEventListener("mousemove", (e)=>{ if (joyActive) updateJoy(e.clientX,e.clientY); });
+    window.addEventListener("mouseup", joyReset);
+    joy.addEventListener("touchstart", (e)=>{ const t=e.touches[0]; if (t) joyStart(t.clientX,t.clientY); }, {passive:false});
+    joy.addEventListener("touchmove", (e)=>{ const t=e.touches[0]; if (t) updateJoy(t.clientX,t.clientY); }, {passive:false});
+    joy.addEventListener("touchend", joyReset);
   }
-  joy.addEventListener("mousedown", (e)=>{ e.preventDefault(); joyStart(e.clientX,e.clientY); });
-  window.addEventListener("mousemove", (e)=>{ if (joyActive) updateJoy(e.clientX,e.clientY); });
-  window.addEventListener("mouseup", joyReset);
-  joy.addEventListener("touchstart", (e)=>{ const t=e.touches[0]; if (t) joyStart(t.clientX,t.clientY); }, {passive:false});
-  joy.addEventListener("touchmove", (e)=>{ const t=e.touches[0]; if (t) updateJoy(t.clientX,t.clientY); }, {passive:false});
-  joy.addEventListener("touchend", joyReset);
 
   // Sockets
   socket.on("bootstrap", ({ you, players, hotspots, planets }) => {
     local.id = you.id; local.name = you.name; local.points = you.points||0;
     pointsEl.textContent = `Points: ${local.points}`;
-    local.group.position.set(you.x, 0, you.z);
+    local.parts.group.position.set(you.x, 0, you.z);
     local.yaw = you.ry || 0;
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
@@ -280,7 +290,7 @@
   });
 
   socket.on("player-joined", (p)=>{ if (p.id!==local.id){ const R = ensureRemote(p); updateNameTag(R, p.name || R.name); }});
-  socket.on("player-left", (id)=>{ const R=remotes.get(id); if (R){ scene.remove(R.group); remotes.delete(id);} });
+  socket.on("player-left", (id)=>{ const R=remotes.get(id); if (R){ scene.remove(R.parts.group); remotes.delete(id);} });
   socket.on("player:name", ({id,name})=>{
     if (id===local.id){ local.name = name; updateNameTag(local, name); }
     const R=remotes.get(id); if (R) updateNameTag(R, name);
@@ -298,38 +308,87 @@
   });
   socket.on("quest:update", ({code, progress, goal}) => showToast(`Görev: ${code} ${progress}/${goal}`));
 
-  // Emote — tokenlı animasyon + chat bildirimi
+  // ==== Emote animasyonları (farklı hareketler) ====
   const emoteTokens = new Map();
-  socket.on("emote", ({ id, type, until }) => {
-    const target = (id===local.id) ? { holder: local, group: local.group, torso: local.torso } : remotes.get(id);
-    if (!target) return;
+  function resetPose(parts){
+    parts.armL.rotation.set(0,0,-Math.PI/8);
+    parts.armR.rotation.set(0,0, Math.PI/8);
+    parts.legL.rotation.set(0,0,0);
+    parts.legR.rotation.set(0,0,0);
+    parts.torso.rotation.set(0,0,0);
+    parts.group.position.y = 0;
+  }
+  function playEmote(parts, id, type, ms=1200){
+    const baseColor = parts.torso.material.color.clone();
+    const token = (emoteTokens.get(id) || 0) + 1;
+    emoteTokens.set(id, token);
+    const t0 = performance.now();
 
+    function wave(t){
+      const k = Math.sin((t-t0)/130);
+      parts.armR.rotation.x = -0.6 + 0.4*Math.sin((t-t0)/90);
+      parts.armR.rotation.z =  0.8 + 0.1*k;
+      parts.torso.rotation.y =  0.1*k;
+    }
+    function dance(t){
+      const k = Math.sin((t-t0)/160);
+      parts.group.position.y = 0.08*Math.max(0, Math.sin((t-t0)/120));
+      parts.torso.rotation.z = 0.25*k;
+      parts.armL.rotation.x = 0.6*k; parts.armR.rotation.x = -0.6*k;
+    }
+    function sit(t){
+      parts.legL.rotation.x = -1.0; parts.legR.rotation.x = -1.0;
+      parts.torso.rotation.x = -0.3;
+      parts.group.position.y = -0.2;
+    }
+    function clap(t){
+      const k = 0.6 + 0.6*Math.sin((t-t0)/90);
+      parts.armL.rotation.x = 0.2; parts.armR.rotation.x = 0.2;
+      parts.armL.rotation.y = 0.8*k; parts.armR.rotation.y = -0.8*k;
+      parts.torso.rotation.y = 0.05*Math.sin((t-t0)/120);
+    }
+    function point(t){
+      parts.armR.rotation.x = -1.2; parts.armR.rotation.y = 0.3;
+      parts.torso.rotation.y = 0.15; parts.torso.rotation.x = -0.1;
+    }
+    function cheer(t){
+      const k = Math.sin((t-t0)/110);
+      parts.armL.rotation.x = -1.6; parts.armR.rotation.x = -1.6;
+      parts.group.position.y = 0.10*Math.max(0, k);
+    }
+
+    const fn = {
+      wave, dance, sit, clap, point, cheer
+    }[type] || dance;
+
+    (function anim(){
+      if (emoteTokens.get(id) !== token) { parts.torso.material.color.copy(baseColor); resetPose(parts); return; }
+      const t = performance.now();
+      const done = (t - t0) / ms;
+      fn(t);
+      parts.torso.material.color.lerp(new THREE.Color(0x66ccff), 0.15);
+      if (done >= 1) { parts.torso.material.color.copy(baseColor); resetPose(parts); return; }
+      requestAnimationFrame(anim);
+    })();
+  }
+
+  socket.on("emote", ({ id, type, until }) => {
+    const target = (id===local.id) ? { parts: local.parts } : remotes.get(id);
+    if (!target) return;
+    // chat bildirimi
     const p = document.createElement("p");
     p.innerHTML = `<i style="opacity:.8">[emote] ${getDisplayName(id)}: /${type}</i>`;
     chatLog.appendChild(p); chatLog.scrollTop = chatLog.scrollHeight;
 
-    const base = target.torso.material.color.clone();
-    const token = (emoteTokens.get(id) || 0) + 1;
-    emoteTokens.set(id, token);
-
-    const duration = Math.max(600, Math.min(1500, (until ? (until - Date.now()) : 1200)));
-    const start = performance.now();
-    (function anim(){
-      if (emoteTokens.get(id) !== token) { target.torso.material.color.copy(base); target.group.position.y = 0; return; }
-      const t = performance.now(); const done = (t - start)/duration;
-      if (done >= 1) { target.torso.material.color.copy(base); target.group.position.y = 0; return; }
-      target.group.position.y = Math.max(0, Math.sin((t - start)/120)*0.08);
-      target.torso.material.color.lerp(new THREE.Color(0x66ccff), 0.15);
-      requestAnimationFrame(anim);
-    })();
+    playEmote(target.parts, id, type, Math.max(700, Math.min(1600, (until ? (until - Date.now()) : 1200))));
   });
 
   socket.on("snapshot", ({ players }) => {
     (players||[]).forEach(p=>{
       if (p.id===local.id) return;
       const R = ensureRemote(p);
-      R.group.position.lerp(new THREE.Vector3(p.x,0,p.z), 0.2);
-      if (typeof p.ry === "number") R.group.rotation.y = THREE.MathUtils.lerp(R.group.rotation.y, p.ry, 0.2);
+      R.parts.group.position.lerp(new THREE.Vector3(p.x,0,p.z), 0.2);
+      if (typeof p.ry === "number") R.parts.group.rotation.y = THREE.MathUtils.lerp(R.parts.group.rotation.y, p.ry, 0.2);
       if (R.name !== p.name && p.name) updateNameTag(R, p.name);
     });
   });
@@ -342,7 +401,7 @@
   function checkHotspots(){
     hotspotInfo.forEach((info, name)=>{
       if (local.visited[name]) return;
-      const d = info.pos.distanceTo(local.group.position);
+      const d = info.pos.distanceTo(local.parts.group.position);
       if (d <= info.r + 0.5) { local.visited[name]=true; socket.emit("hotspot:entered", { name }); }
     });
   }
@@ -352,9 +411,11 @@
 
     // Yön — FARE NEREYE BAKIYORSA W O YÖNE
     const kForward = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0);
-    const kStrafe  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0);
+    const kStrafeKB  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0); // D=+1 (sağ), A=-1 (sol)
+    const kStrafe = kStrafeKB + joyVec.x;
+
     let forward = kForward + joyVec.y;
-    let strafe  = kStrafe  + joyVec.x;
+    let strafe  = kStrafe;
     forward = Math.max(-1, Math.min(1, forward));
     strafe  = Math.max(-1, Math.min(1, strafe));
 
@@ -362,31 +423,33 @@
     const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (mag>1 ? 1/mag : 1);
 
     if (forward || strafe) {
-      // İleri ve sağ eksenleri (sağ = (cos, -sin)) — D=sağ, A=sol
+      // STRAFE işareti kullanıcı beklentisine göre düzeltildi:
+      // dx = f*sin  - s*cos
+      // dz = f*cos  + s*sin
       const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
-      const dx = forward * sin + strafe * cos;
-      const dz = forward * cos - strafe * sin;
-      local.group.position.x += dx * spd * dt;
-      local.group.position.z += dz * spd * dt;
+      const dx = forward * sin - strafe * cos;
+      const dz = forward * cos + strafe * sin;
+      local.parts.group.position.x += dx * spd * dt;
+      local.parts.group.position.z += dz * spd * dt;
     }
 
-    // Yaw’ı uygula
-    local.group.rotation.y = local.yaw;
+    // Yaw uygula
+    local.parts.group.rotation.y = local.yaw;
 
     // Kamera & zoom
-    const camX = local.group.position.x - Math.sin(local.yaw) * camDist;
-    const camZ = local.group.position.z - Math.cos(local.yaw) * camDist;
+    const camX = local.parts.group.position.x - Math.sin(local.yaw) * camDist;
+    const camZ = local.parts.group.position.z - Math.cos(local.yaw) * camDist;
     camera.position.lerp(new THREE.Vector3(camX, 2.0, camZ), 0.15);
-    camera.lookAt(local.group.position.x, local.group.position.y + 0.8, local.group.position.z);
+    camera.lookAt(local.parts.group.position.x, local.parts.group.position.y + 0.8, local.parts.group.position.z);
 
-    // Gezegen gövdeleri (halo yok)
+    // Gezegenler (halo yok)
     for (const p of planetMeshes) p.mesh.rotation.y -= 0.0012;
 
     // Ağ
     netAcc += dt;
     if (netAcc > 0.08 && local.id) {
       netAcc = 0;
-      socket.emit("state", { x:local.group.position.x, y:0, z:local.group.position.z, ry: local.yaw });
+      socket.emit("state", { x:local.parts.group.position.x, y:0, z:local.parts.group.position.z, ry: local.yaw });
     }
 
     checkHotspots();
