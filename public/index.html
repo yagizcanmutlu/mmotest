@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Byzas Agora – Sosyal Hub (Planets)</title>
+  <title>AGORA – Sosyal Hub</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     html,body{height:100%;background:#000;font-family:Inter,system-ui,Arial}
@@ -12,6 +12,13 @@
     .hud{position:absolute;top:12px;left:12px;display:flex;gap:10px;align-items:center;z-index:10}
     .logo{color:#8ef;font-weight:800;letter-spacing:.3px;text-shadow:0 0 8px #48f}
     .points{padding:6px 10px;border:1px solid #2a5;border-radius:8px;color:#aef;background:rgba(10,30,18,.35);backdrop-filter:blur(4px)}
+    .help-btn{margin-left:8px; width:32px;height:32px;border-radius:8px;border:1px solid #234;background:rgba(8,10,20,.6);color:#9cf;cursor:pointer;font-weight:800}
+
+    .help{position:absolute;top:56px;left:12px;z-index:12;display:none;
+      background:rgba(8,10,20,.92);border:1px solid #234;border-radius:12px;color:#cfe;padding:12px;max-width:320px}
+    .help h3{margin:0 0 6px 0;color:#9cf}
+    .help ul{padding-left:18px}
+    .help small{opacity:.8}
 
     .cta{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:12;background:rgba(0,0,0,.55);backdrop-filter:blur(4px)}
     .card{padding:18px 16px;background:rgba(8,10,20,.9);border:1px solid #234;border-radius:14px;width:320px;display:flex;flex-direction:column;gap:10px}
@@ -19,14 +26,14 @@
     .card input{padding:10px;border-radius:10px;border:1px solid #345;background:#0a0f14;color:#cfe}
     .card button{padding:12px;border-radius:12px;border:0;font-weight:700;background:#1d8f4a;color:#eafff0;cursor:pointer}
 
-    .chat{position:absolute;left:12px;bottom:12px;width:340px;z-index:10}
+    /* Chat sağ altta */
+    .chat{position:absolute;right:12px;bottom:12px;width:340px;z-index:10}
     .chat-log{height:150px;overflow:auto;background:rgba(5,7,12,.55);border:1px solid #223;border-radius:10px;padding:8px;color:#cfe}
     .chat-log p{margin:4px 0}
     .chat-input{margin-top:6px;display:flex;gap:6px}
     .chat-input input{flex:1;padding:10px;border-radius:10px;border:1px solid #345;background:#0a0f14;color:#cfe}
     .chat-input button{padding:10px 12px;border-radius:10px;border:0;background:#29549b;color:#e7f0ff;cursor:pointer}
 
-    .hint{position:absolute;right:12px;bottom:12px;color:#7da;font-size:12px;opacity:.85;z-index:10;background:rgba(0,0,0,.35);padding:6px 8px;border-radius:8px;border:1px solid #123}
     .floating{position:absolute;top:60px;left:50%;transform:translateX(-50%);color:#aff;text-shadow:0 0 8px #0ff;z-index:10;font-weight:700;display:none}
 
     /* Mobile controls */
@@ -34,7 +41,6 @@
     #stick{position:absolute;left:50%;top:50%;width:56px;height:56px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(80,180,255,.35);border:1px solid #2a4}
     #lookpad{position:absolute;right:0;bottom:0;width:40vw;height:55vh;z-index:11;touch-action:none}
 
-    /* Small screens: shrink chat */
     @media (max-width: 900px){
       .chat{width:260px}
       .chat-log{height:120px}
@@ -46,8 +52,21 @@
 <body>
   <div id="root">
     <div class="hud">
-      <div class="logo">BYZAS&nbsp;AGORA</div>
+      <div class="logo">AGORA</div>
       <div class="points" id="points">Points: 0</div>
+      <button class="help-btn" id="helpBtn">?</button>
+    </div>
+
+    <div class="help" id="helpBox">
+      <h3>Kontroller</h3>
+      <ul>
+        <li><b>WASD</b>: İleri/geri & sol/sağ</li>
+        <li><b>Fare</b> veya sağ alanı <b>sürükle</b>: Bakış</li>
+        <li><b>Tekerlek</b>: Zoom</li>
+        <li><b>1–6</b> veya <code>/wave /dance /sit /clap /point /cheer</code></li>
+        <li><b>Enter</b>: Chat’e odaklan/aç</li>
+      </ul>
+      <small>Mobilde: Sol joystick hareket, sağ alan sürükle bakış.</small>
     </div>
 
     <div class="cta" id="cta">
@@ -55,7 +74,6 @@
         <h1>Agora'ya katıl</h1>
         <input id="nameInput" placeholder="Görünen adın (ör. Yağız)" maxlength="20" />
         <button id="playBtn">Giriş (WASD + Fare • Mobil: Joystick)</button>
-        <small style="color:#8aa">Emote: 1–6 • Chat: Enter • Zoom: Mouse Wheel</small>
       </div>
     </div>
 
@@ -71,9 +89,16 @@
     <div id="joystick"><div id="stick"></div></div>
     <div id="lookpad"></div>
 
-    <div class="hint">WASD / Joystick ile hareket • Fare/sağ sürükle ile bakış • Scroll: Zoom</div>
     <div class="floating" id="toast"></div>
   </div>
   <script src="client.js"></script>
+  <script>
+    // ? yardım toggle
+    const helpBtn = document.getElementById("helpBtn");
+    const helpBox = document.getElementById("helpBox");
+    helpBtn.addEventListener("click", ()=> {
+      helpBox.style.display = helpBox.style.display === "block" ? "none" : "block";
+    });
+  </script>
 </body>
 </html>

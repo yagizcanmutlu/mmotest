@@ -1,6 +1,6 @@
 /* global THREE, io */
 (() => {
-  // ==== UI REFS ====
+  // UI
   const root = document.getElementById("root");
   const cta = document.getElementById("cta");
   const playBtn = document.getElementById("playBtn");
@@ -14,9 +14,9 @@
   const stick = document.getElementById("stick");
   const lookpad = document.getElementById("lookpad");
 
-  const socket = io(); // same origin
+  const socket = io();
 
-  // ==== THREE SCENE ====
+  // THREE
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(root.clientWidth, root.clientHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -51,34 +51,35 @@
   const stars = new THREE.Points(starGeom, new THREE.PointsMaterial({ size:0.6, color:0x8cbcff }));
   scene.add(stars);
 
-  // ==== HELPERS ====
+  // Helpers
   function makeNameSprite(label, color="#bfe4ff") {
-    const padX=8, padY=4;
+    const padX=10, padY=6;
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
-    ctx.font = "bold 18px Arial";                      // küçük font
-    const w = Math.max(56, ctx.measureText(label).width + padX*2);
-    const h = 28 + padY*2;
+    ctx.font = "bold 22px Arial";
+    const w = Math.max(80, ctx.measureText(label).width + padX*2);
+    const h = 30 + padY*2;
     canvas.width = w; canvas.height = h;
-    ctx.font = "bold 18px Arial";
+    ctx.font = "bold 22px Arial";
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.strokeStyle = "rgba(20,100,255,0.9)";
     ctx.lineWidth = 2;
     ctx.fillRect(0,0,w,h);
     ctx.strokeRect(0,0,w,h);
     ctx.fillStyle = color;
-    ctx.fillText(label, padX, 22);
+    ctx.fillText(label, padX, 24);
     const tex = new THREE.CanvasTexture(canvas);
     tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
-    const mat = new THREE.SpriteMaterial({ map: tex, depthWrite:false, depthTest:false }); // her zaman görünür
+    const mat = new THREE.SpriteMaterial({ map: tex, depthWrite:false, depthTest:false });
     const sp = new THREE.Sprite(mat);
-    sp.scale.set(w/300, h/300, 1);                     // ufak ölçek
-    sp.position.set(0, 1.85, 0);                       // karakter üstü
+    sp.renderOrder = 9999;
+    sp.scale.set(w/120, h/120, 1);      // daha büyük
+    sp.position.set(0, 2.1, 0);         // baş üstü
     return sp;
   }
   function showToast(text){ toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
 
-  // ==== Stylized Character ====
+  // Character
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff) {
     const grp = new THREE.Group();
 
@@ -86,7 +87,6 @@
       new THREE.CapsuleGeometry(0.5, 0.7, 8, 16),
       new THREE.MeshStandardMaterial({ color: primaryColor, roughness:.85, metalness:.12 })
     );
-    torso.castShadow = true;
     grp.add(torso);
 
     const legMat = new THREE.MeshStandardMaterial({ color: primaryColor, roughness:.85 });
@@ -111,7 +111,7 @@
     grp.add(armL, armR);
 
     const pack = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.8,0.3), new THREE.MeshPhongMaterial({ specular:"silver", shininess:100, color:0xffffff }));
-    pack.position.set(0,0.3,-0.5); pack.castShadow=true; pack.receiveShadow=true; grp.add(pack);
+    pack.position.set(0,0.3,-0.5); grp.add(pack);
 
     const dome = new THREE.Mesh(
       new THREE.SphereGeometry(1.0, 24, 24),
@@ -123,13 +123,13 @@
     return { group: grp, torso };
   }
 
-  // ==== Local / Remote ====
+  // Local/Remote
   const local = { id:null, name:null, yaw:0, group:null, torso:null, tag:null, points:0, visited:{} };
   {
     const { group, torso } = buildStylizedChar(0xffe4c4);
     local.group = group; local.torso = torso; scene.add(group);
   }
-  const remotes = new Map(); // id -> { group, torso, tag, name }
+  const remotes = new Map();
   function ensureRemote(p){
     let R = remotes.get(p.id);
     if (!R) {
@@ -157,8 +157,8 @@
     const R = remotes.get(id); return (R && R.name) || `Yogi-${String(id).slice(0,4)}`;
   }
 
-  // ==== Hotspots & Planets ====
-  const hotspotInfo = new Map(); // name -> { pos: THREE.Vector3, r: number }
+  // Hotspots & Planets
+  const hotspotInfo = new Map();
   function addHotspotDisk(name, x, z, r){
     const m = new THREE.Mesh(
       new THREE.CylinderGeometry(r, r, 0.2, 48),
@@ -176,7 +176,7 @@
     const geo = new THREE.SphereGeometry(p.radius, 40, 40);
     const mat = new THREE.MeshPhongMaterial({ color: p.color, map: moonTex, bumpMap: moonTex, bumpScale: 0.6 });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(p.x, -3.0 + p.radius*0.2, p.z);
+    mesh.position.set(p.x, p.radius + 0.1, p.z); // ZEMİN ÜSTÜNE ALINDI
     mesh.rotation.x = -Math.PI/10;
     mesh.castShadow = true; mesh.receiveShadow = true;
     const label = makeNameSprite(p.name, "#9ef");
@@ -187,9 +187,10 @@
     hotspotInfo.set(`Planet:${p.name}`, { pos:new THREE.Vector3(p.x,0,p.z), r:p.r });
   }
 
-  // ==== INPUT ====
+  // Input
   const keys = new Set();
   let chatFocus = false;
+
   window.addEventListener("keydown", (e)=>{
     if (e.code === "Enter") {
       chatFocus = !chatFocus; if (chatFocus) chatText.focus(); else chatText.blur(); return;
@@ -203,7 +204,7 @@
   });
   window.addEventListener("keyup", (e)=> keys.delete(e.code));
 
-  // Pointer-lock bakış (desktop)
+  // Pointer-lock look (desktop) — yaw yönü düzeltildi
   playBtn.addEventListener("click", () => {
     cta.style.display = "none";
     const desired = (nameInput.value||"").trim().slice(0,20);
@@ -215,65 +216,56 @@
   });
   window.addEventListener("mousemove", (e) => {
     if (document.pointerLockElement === renderer.domElement && !chatFocus) {
-      local.yaw -= e.movementX * 0.0025;
+      local.yaw += e.movementX * 0.0025; // <<< terslik giderildi
     }
   });
 
-  // Drag-to-look (touch & mouse) — sağ alan
+  // Drag look (sağ alan)
   let lookActive = false, lastLX = 0;
   function lookStart(x){ lookActive = true; lastLX = x; }
-  function lookMove(x){ if (!lookActive) return; const dx = x - lastLX; lastLX = x; local.yaw -= dx * 0.003; }
+  function lookMove(x){ if (!lookActive) return; const dx = x - lastLX; lastLX = x; local.yaw += dx * 0.003; }
   function lookEnd(){ lookActive = false; }
-  // Mouse
   lookpad.addEventListener("mousedown", (e)=>lookStart(e.clientX));
   window.addEventListener("mousemove", (e)=>lookMove(e.clientX));
   window.addEventListener("mouseup", lookEnd);
-  // Touch
-  lookpad.addEventListener("touchstart", (e)=>{ if (e.touches[0]) lookStart(e.touches[0].clientX); }, {passive:false});
-  lookpad.addEventListener("touchmove",  (e)=>{ if (e.touches[0]) lookMove(e.touches[0].clientX); }, {passive:false});
+  lookpad.addEventListener("touchstart", (e)=>{ const t=e.touches[0]; if (t) lookStart(t.clientX); }, {passive:false});
+  lookpad.addEventListener("touchmove",  (e)=>{ const t=e.touches[0]; if (t) lookMove(t.clientX); }, {passive:false});
   lookpad.addEventListener("touchend", lookEnd);
 
-  // Mouse wheel zoom
+  // Zoom
   let camDist = 3.6;
   window.addEventListener("wheel", (e)=>{
     camDist += e.deltaY * 0.002;
     camDist = Math.min(10, Math.max(2, camDist));
   }, {passive:true});
 
-  // Mobile joystick
+  // Mobile joystick (solda) — chat artık sağda olduğu için çakışma yok
   let joyActive = false, joyCenter = {x:0,y:0}, joyVec = {x:0,y:0};
   function setStick(x,y){ stick.style.transform = `translate(${x}px, ${y}px)`; }
-  function joyReset(){ joyActive=false; joyVec.x=0; joyVec.y=0; setStick(-50,-50); } // back to center (since width/height 56 ~ ~50 offset)
+  function joyReset(){ joyActive=false; joyVec.x=0; joyVec.y=0; setStick(-50,-50); }
   joyReset();
-
   function joyStart(cx,cy){ joyActive=true; const rect = joy.getBoundingClientRect(); joyCenter.x = rect.left + rect.width/2; joyCenter.y = rect.top + rect.height/2; updateJoy(cx,cy); }
   function updateJoy(px,py){
-    const dx = px - joyCenter.x;
-    const dy = py - joyCenter.y;
-    const rMax = 44; // radius limit
-    const len = Math.hypot(dx,dy) || 1;
-    const k = Math.min(1, rMax/len);
+    const dx = px - joyCenter.x, dy = py - joyCenter.y;
+    const rMax = 44, len = Math.hypot(dx,dy) || 1, k = Math.min(1, rMax/len);
     const nx = dx * k, ny = dy * k;
     setStick(nx-28, ny-28);
-    joyVec.x = nx / rMax;  // strafe
-    joyVec.y = -ny / rMax; // forward
+    joyVec.x = nx / rMax;      // strafe
+    joyVec.y = -ny / rMax;     // forward
   }
-  // Mouse
   joy.addEventListener("mousedown", (e)=>{ e.preventDefault(); joyStart(e.clientX,e.clientY); });
   window.addEventListener("mousemove", (e)=>{ if (joyActive) updateJoy(e.clientX,e.clientY); });
   window.addEventListener("mouseup", joyReset);
-  // Touch
   joy.addEventListener("touchstart", (e)=>{ const t=e.touches[0]; if (t) joyStart(t.clientX,t.clientY); }, {passive:false});
   joy.addEventListener("touchmove", (e)=>{ const t=e.touches[0]; if (t) updateJoy(t.clientX,t.clientY); }, {passive:false});
   joy.addEventListener("touchend", joyReset);
 
-  // ==== SOCKET EVENTS ====
+  // Sockets
   socket.on("bootstrap", ({ you, players, hotspots, planets }) => {
     local.id = you.id; local.name = you.name; local.points = you.points||0;
     pointsEl.textContent = `Points: ${local.points}`;
     local.group.position.set(you.x, 0, you.z);
     local.yaw = you.ry || 0;
-    // local name tag
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
     (hotspots||[]).forEach(h=>{
@@ -303,13 +295,12 @@
   });
   socket.on("quest:update", ({code, progress, goal}) => showToast(`Görev: ${code} ${progress}/${goal}`));
 
-  // Emote animasyonu – token’lı (takılmayı engeller) + chat’e bildirim
-  const emoteTokens = new Map(); // id -> n
+  // Emote — tokenlı animasyon + chat bildirimi
+  const emoteTokens = new Map();
   socket.on("emote", ({ id, type, until }) => {
     const target = (id===local.id) ? { holder: local, group: local.group, torso: local.torso } : remotes.get(id);
     if (!target) return;
 
-    // Chat bildirimi
     const p = document.createElement("p");
     p.innerHTML = `<i style="opacity:.8">[emote] ${getDisplayName(id)}: /${type}</i>`;
     chatLog.appendChild(p); chatLog.scrollTop = chatLog.scrollHeight;
@@ -320,24 +311,14 @@
 
     const duration = Math.max(600, Math.min(1500, (until ? (until - Date.now()) : 1200)));
     const start = performance.now();
-    function anim(){
-      if (emoteTokens.get(id) !== token) { // yeni emote geldiyse eskiyi durdur
-        target.torso.material.color.copy(base);
-        target.group.position.y = 0;
-        return;
-      }
-      const t = performance.now();
-      const done = (t - start)/duration;
-      if (done >= 1) {
-        target.torso.material.color.copy(base);
-        target.group.position.y = 0;
-        return;
-      }
+    (function anim(){
+      if (emoteTokens.get(id) !== token) { target.torso.material.color.copy(base); target.group.position.y = 0; return; }
+      const t = performance.now(); const done = (t - start)/duration;
+      if (done >= 1) { target.torso.material.color.copy(base); target.group.position.y = 0; return; }
       target.group.position.y = Math.max(0, Math.sin((t - start)/120)*0.08);
       target.torso.material.color.lerp(new THREE.Color(0x66ccff), 0.15);
       requestAnimationFrame(anim);
-    }
-    anim();
+    })();
   });
 
   socket.on("snapshot", ({ players }) => {
@@ -350,7 +331,7 @@
     });
   });
 
-  // ==== GAME LOOP ====
+  // Loop
   let last = performance.now();
   let netAcc = 0;
   const tmpV = new THREE.Vector3();
@@ -367,7 +348,7 @@
   function tick(now){
     const dt = Math.min(0.05, (now-last)/1000); last = now;
 
-    // --- yön (WASD + joystick) ---
+    // Yön — fare nereye bakıyorsa W o yöne
     const kForward = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0);
     const kStrafe  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0);
     let forward = kForward + joyVec.y;
@@ -375,27 +356,28 @@
     forward = Math.max(-1, Math.min(1, forward));
     strafe  = Math.max(-1, Math.min(1, strafe));
 
-    const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (Math.hypot(strafe,forward) > 1 ? (1/Math.hypot(strafe,forward)) : 1);
+    const norm = Math.hypot(strafe,forward) || 1;
+    const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (norm>1 ? 1/norm : 1);
 
     if (forward || strafe) {
-      tmpV.set(strafe,0,forward).normalize();
+      // Eksen dönüşümü (yaw): local -> world
       const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
-      const dx = tmpV.x * cos - tmpV.z * sin;
-      const dz = tmpV.x * sin + tmpV.z * cos;
+      const dx = strafe * cos - forward * sin;
+      const dz = strafe * sin + forward * cos;
       local.group.position.x += dx * spd * dt;
       local.group.position.z += dz * spd * dt;
     }
 
-    // yaw'ı gruba uygula (mouse/drag ile değişiyor)
+    // Yaw’ı uygula
     local.group.rotation.y = local.yaw;
 
-    // Kamera takibi + zoom
+    // Kamera & zoom
     const cx = local.group.position.x - Math.sin(local.yaw) * camDist;
     const cz = local.group.position.z - Math.cos(local.yaw) * camDist;
     camera.position.lerp(new THREE.Vector3(cx, 2.0, cz), 0.15);
     camera.lookAt(local.group.position.x, local.group.position.y + 0.8, local.group.position.z);
 
-    // Planets idle rotation
+    // Planets
     for (const p of planetMeshes) p.mesh.rotation.y -= 0.0012;
 
     // Ağ
@@ -405,9 +387,7 @@
       socket.emit("state", { x:local.group.position.x, y:0, z:local.group.position.z, ry: local.yaw });
     }
 
-    // Hotspots
     checkHotspots();
-
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
@@ -420,7 +400,7 @@
     camera.updateProjectionMatrix();
   });
 
-  // Chat helpers
+  // Chat
   function sendChat(){ const t = chatText.value.trim(); if (!t) return; socket.emit("chat:send", { text:t }); chatText.value=""; }
   chatSend.addEventListener("click", sendChat);
   chatText.addEventListener("keydown", (e)=>{ if (e.key === "Enter") sendChat(); });
