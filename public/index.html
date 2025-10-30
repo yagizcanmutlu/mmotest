@@ -46,6 +46,22 @@
       .chat-log{height:120px}
     }
   </style>
+
+  <!-- CSS (ekle) -->
+  <style>
+    .seg{
+      display:inline-grid;grid-auto-flow:column;gap:6px;background:rgba(8,10,20,.6);
+      border:1px solid #234;border-radius:12px;padding:6px;user-select:none
+    }
+    .seg input{display:none}
+    .seg label{
+      padding:8px 12px;border-radius:8px;cursor:pointer;color:#cfe;background:transparent;
+      border:1px solid transparent;font-weight:700;letter-spacing:.2px
+    }
+    .seg input:checked + label{background:#1a2738;border-color:#29549b;color:#e7f0ff;box-shadow:0 0 0 2px rgba(41,84,155,.25) inset}
+  </style>
+
+
   <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
 </head>
@@ -72,10 +88,19 @@
     <div class="cta" id="cta">
       <div class="card">
         <h1>Agora'ya katıl</h1>
-        <input id="nameInput" placeholder="Görünen adın (ör. Yağız)" maxlength="20" />
+        <input id="nameInput" placeholder="Görünen adın (ör. Yogi)" maxlength="20" />
         <button id="playBtn">Giriş (WASD + Fare • Mobil: Joystick)</button>
       </div>
     </div>
+
+        <!-- CTA kartında, nameInput'un altına EKLE -->
+    <div class="seg" style="margin-top:6px">
+      <input id="genderFemale" name="gender" type="radio" value="female" checked>
+      <label for="genderFemale">Kadın</label>
+      <input id="genderMale" name="gender" type="radio" value="male">
+      <label for="genderMale">Erkek</label>
+    </div>
+
 
     <div class="chat">
       <div class="chat-log" id="chatLog"></div>
