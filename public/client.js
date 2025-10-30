@@ -13,13 +13,6 @@
   const joy = document.getElementById("joystick");
   const stick = document.getElementById("stick");
   const lookpad = document.getElementById("lookpad");
-    // === Gender seçim binding (2A) ===
-  const genderRadios = document.querySelectorAll('input[name="gender"]');
-  let selectedGender = 'female';
-  genderRadios.forEach(r => r.addEventListener('change', e => {
-    selectedGender = e.target.value;
-  }));
-
 
   const socket = io();
 
@@ -91,253 +84,69 @@
   function showToast(text){ toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
 
   // Stylized Character (parça referanslarıyla)
-  function buildStylizedChar(arg1, accentArg){
-    let opts = (typeof arg1==='object') ? {...arg1} : { skin: arg1 ?? 0xffe4c4, accent: accentArg ?? 0xffffff };
-
-    const gender     = (opts.gender === 'female') ? 'female' : 'male';
-    const skin       = opts.skin   ?? 0xffe4c4;
-    const suit       = opts.suit   ?? 0x2a2f3b;
-    const accent     = opts.accent ?? 0xffffff;
-    const withDome   = (opts.withDome !== false);
-    const withPack   = (opts.withPack !== false);
-    const scale      = opts.scale ?? 0.22;
-
-    // Female varsayılanları
-    const withHair   = (gender==='female') ? true : !!opts.withHair;
-    const hairStyle  = opts.hairStyle || (gender==='female' ? 'bun' : null);
-    const hairColor  = new THREE.Color(opts.hairColor ?? 0x1b0f16);
-    const lipsColor  = new THREE.Color(opts.lipsColor ?? (gender==='female' ? 0xff2244 : accent));
-    const withSkirt  = (gender==='female') ? (opts.withSkirt !== false) : false;
-    let   skirtLen   = opts.skirtLength ?? 0.61;
-    let   skirtFlare = opts.skirtFlare  ?? 1.70;
-
-    // Proporsiyon ufak farklar
-    const shoulderX  = (gender==='female') ? 0.36 : 0.40;
-    const headScale  = (gender==='female') ? 0.94 : 1.00;
-    const legH       = opts.legH ?? ((gender==='female') ? 0.78 : 0.70);
-    const legR       = opts.legR ?? ((gender==='female') ? 0.17 : 0.19);
-    const bootH      = opts.bootH ?? 0.14;
-    const bootCol    = opts.bootColor ?? suit;
-
-    // Malzemeler
-    const matSkin  = new THREE.MeshStandardMaterial({ color: skin,  roughness:0.85, metalness:0.12 });
-    const matSuit  = new THREE.MeshStandardMaterial({ color: suit,  roughness:0.80, metalness:0.25 });
-    const matAcc   = new THREE.MeshStandardMaterial({ color: accent,roughness:0.60, metalness:0.40 });
-    const matDark  = new THREE.MeshStandardMaterial({ color: 0x111111, roughness:0.60 });
-    const matBoot  = new THREE.MeshStandardMaterial({ color: bootCol, roughness:0.60, metalness:0.25 });
-    const matHair  = new THREE.MeshStandardMaterial({ color: hairColor, roughness:0.90, metalness:0.0 });
-    const matLips  = new THREE.MeshStandardMaterial({ color: lipsColor, roughness:0.40, metalness:0.08 });
-    const matSkirt = new THREE.MeshStandardMaterial({ color: suit, roughness:0.92, metalness:0.05, side:THREE.DoubleSide });
-
+  function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff) {
     const grp = new THREE.Group();
 
-    function disposeGroup(g){
-      g.traverse(o=>{
-        if (o.isMesh){
-          o.geometry?.dispose?.();
-          if (Array.isArray(o.material)) o.material.forEach(m=>m?.dispose?.());
-          else o.material?.dispose?.();
-        }
-      });
-    }
-
-    function swapLocalAvatar(gender='female'){
-      if (local.parts){
-        scene.remove(local.parts.group);
-        disposeGroup(local.parts.group);
-      }
-      // Burada senin buildStylizedChar’ını çağırıyoruz:
-      const parts = buildStylizedChar({
-        gender,
-        skin: 0xffe4c4, suit: 0x2a2f3b, accent: 0xffffff,
-        withDome: true, withPack: true, scale: 0.22
-      });
-      local.parts = parts;
-      scene.add(parts.group);
-
-      // Pozisyonu/rotasyonu koru (varsa)
-      if (local.x!=null && local.z!=null){
-        parts.group.position.set(local.x, 0, local.z);
-      }
-      if (typeof local.yaw === 'number'){
-        parts.group.rotation.y = local.yaw;
-      }
-    }
-
-
-    // Gövde
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 0.70, 8, 16), matSuit);
+    const torso = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.5, 0.7, 8, 16),
+      new THREE.MeshStandardMaterial({ color: primaryColor, roughness:.85, metalness:.12 })
+    );
     grp.add(torso);
 
-    // Bacaklar
-    const legGeo = new THREE.CapsuleGeometry(legR, legH, 6, 12);
-    const legL = new THREE.Mesh(legGeo, matSkin);
-    const legRMesh = new THREE.Mesh(legGeo.clone(), matSkin);
-    legL.position.set( 0.22,-1.0,0);
-    legRMesh.position.set(-0.22,-1.0,0);
-    grp.add(legL, legRMesh);
+    const legMat = new THREE.MeshStandardMaterial({ color: primaryColor, roughness:.85 });
+    const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.18,0.5,6,12), legMat.clone());
+    const legR = legL.clone(); legL.position.set( 0.22,-1.0,0); legR.position.set(-0.22,-1.0,0);
+    grp.add(legL, legR);
 
-    // Botlar
-    const footGeo = new THREE.BoxGeometry(legR*2.0, bootH, 0.42);
-    const bootL = new THREE.Mesh(footGeo, matBoot);
-    const bootR = new THREE.Mesh(footGeo.clone(), matBoot);
-    const footY = -1.0 - (legH*0.5) - (bootH*0.5) + 0.25;
-    bootL.position.set( 0.22, footY, 0.02);
-    bootR.position.set(-0.22, footY, 0.02);
-    grp.add(bootL, bootR);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 20), new THREE.MeshStandardMaterial({ color: primaryColor }));
+    head.position.set(0,1.2,0); grp.add(head);
 
-    // Baş
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 20), matSkin);
-    head.position.set(0,1.2,0);
-    head.scale.set(headScale, headScale, headScale);
-    grp.add(head);
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.07,12,12), eyeMat);
+    const eyeR = eyeL.clone(); eyeL.position.set( 0.18,1.30,0.40); eyeR.position.set(-0.18,1.30,0.40);
+    grp.add(eyeL, eyeR);
 
-    // Gözler
-    const eyeGeo = new THREE.SphereGeometry(0.07,12,12);
-    const eyeL = new THREE.Mesh(eyeGeo, matDark);
-    const eyeR = new THREE.Mesh(eyeGeo, matDark);
-    eyeL.position.set( 0.18, 0.10, 0.40);
-    eyeR.position.set(-0.18, 0.10, 0.40);
-    head.add(eyeL, eyeR);
+    const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.15,12,12), new THREE.MeshStandardMaterial({ color: accentColor }));
+    mouth.position.set(0,-0.3,-0.5); torso.add(mouth);
 
-    // Dudak (baş'a bağlı)
-    const lips = new THREE.Mesh(new THREE.SphereGeometry(0.12, 18, 18), matLips);
-    lips.position.set(0, -0.08, 0.44);
-    head.add(lips);
-
-    // Kollar
-    const armGeo = new THREE.CapsuleGeometry(0.15,0.8,6,12);
-    const armL = new THREE.Mesh(armGeo, matSkin);
-    const armR = new THREE.Mesh(armGeo.clone(), matSkin);
-    armL.position.set(-shoulderX,0.5,0); armL.rotation.z = -Math.PI/10;
-    armR.position.set( shoulderX,0.5,0); armR.rotation.z =  Math.PI/10;
+    const armMat = new THREE.MeshStandardMaterial({ color: primaryColor });
+    const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.15,0.8,6,12), armMat);
+    const armR = armL.clone(); armL.position.set(-0.4,0.5,0); armL.rotation.z=-Math.PI/8; armR.position.set(0.4,0.5,0); armR.rotation.z=Math.PI/8;
     grp.add(armL, armR);
 
-    // Sırt çantası
-    let pack = null;
-    if (withPack) {
-      pack = new THREE.Mesh(
-        new THREE.BoxGeometry(0.68,0.78,0.28),
-        new THREE.MeshStandardMaterial({ color: 0xdfe6ee, metalness: 0.6, roughness: 0.2 })
-      );
-      pack.position.set(0,0.30,-0.50);
-      grp.add(pack);
-    }
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.8,0.3), new THREE.MeshPhongMaterial({ specular:"silver", shininess:100, color:0xffffff }));
+    pack.position.set(0,0.3,-0.5); grp.add(pack);
 
-    // Saç (female default açık)
-    const hairGroup = new THREE.Group();
-    head.add(hairGroup);
-    function setHair(style, enable=true){
-      while (hairGroup.children.length){ const c=hairGroup.children.pop(); c.geometry?.dispose?.(); c.material?.dispose?.(); }
-      if (!enable) return;
-      if (style==='bun'){
-        const bun = new THREE.Mesh(new THREE.SphereGeometry(0.18,16,16), matHair);
-        bun.position.set(0,0.12,-0.33); hairGroup.add(bun);
-      } else if (style==='bob'){
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.56,20,20,0,Math.PI*2,Math.PI*0.05,Math.PI*0.55), matHair);
-        cap.position.set(0,-0.02,0); hairGroup.add(cap);
-      } else if (style==='pony'){
-        const band = new THREE.Mesh(new THREE.TorusGeometry(0.11,0.035,10,20), new THREE.MeshStandardMaterial({ color: 0x9e6aff, roughness:0.3, metalness:0.7 }));
-        band.rotation.x=Math.PI/2; band.position.set(0,0.04,-0.35);
-        const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.09,0.35,6,12), matHair);
-        tail.position.set(0,-0.18,-0.38); tail.rotation.x=-0.25;
-        hairGroup.add(band, tail);
-      }
-    }
-    setHair(hairStyle, withHair);
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(1.0, 24, 24),
+      new THREE.MeshPhysicalMaterial({ color:0xffffff, specularColor:"black", ior:1, transparent:true, transmission:1, roughness:0, metalness:0, thickness:0.12, side:THREE.DoubleSide })
+    );
+    dome.position.set(0,1.6,0); grp.add(dome);
 
-    // Cam kubbe
-    let dome = null;
-    if (withDome) {
-      dome = new THREE.Mesh(
-        new THREE.SphereGeometry(1.0, 24, 24),
-        new THREE.MeshPhysicalMaterial({ color:0xffffff, transparent:true, transmission:1.0, roughness:0.02, thickness:0.12, ior:1.0, specularIntensity:0.3, side:THREE.DoubleSide })
-      );
-      dome.position.set(0,1.6,0);
-      grp.add(dome);
-    }
-
-    // Etek (female)
-    let skirt = null;
-    function buildSkirt(){
-      if (skirt){ grp.remove(skirt); skirt.geometry.dispose(); skirt.material.dispose(); skirt=null; }
-      if (!withSkirt) return;
-      const topR = 0.52, botR = topR * skirtFlare, h = skirtLen;
-      const geo = new THREE.CylinderGeometry(topR, botR, h, 28, 1, true);
-      skirt = new THREE.Mesh(geo, matSkirt);
-      skirt.position.set(0, -0.10 - h*0.5, 0);
-      grp.add(skirt);
-    }
-    buildSkirt();
-
-    // Ölçek
-    grp.scale.set(scale, scale, scale);
-
-    return {
-      group: grp, torso, head, armL, armR, legL, legR: legRMesh,
-      bootL, bootR, pack, dome, hairGroup, lips, skirt,
-      setName(name, color="#bfe4ff"){
-        if (this._nameTag) this.group.remove(this._nameTag);
-        const sp = makeNameSprite(name, color); this._nameTag = sp; this.group.add(sp); return sp;
-      },
-      setColors({ skin:cs, suit:cu, accent:ca, boot:cb, hair:ch, lips:cl, skirt:ck } = {}){
-        if (cs!=null) matSkin.color.set(cs);
-        if (cu!=null) matSuit.color.set(cu);
-        if (ca!=null) matAcc.color.set(ca);
-        if (cb!=null) matBoot.color.set(cb);
-        if (ch!=null) matHair.color.set(ch);
-        if (cl!=null) matLips.color.set(cl);
-        if (ck!=null) matSkirt.color.set(ck);
-      }
-    };
+    grp.scale.set(0.20,0.20,0.20);
+    return { group: grp, torso, head, armL, armR, legL, legR };
   }
-
-    function disposeGroup(g){
-    g.traverse(o=>{
-      if (o.isMesh){
-        o.geometry?.dispose?.();
-        if (Array.isArray(o.material)) o.material.forEach(m=>m?.dispose?.()); else o.material?.dispose?.();
-      }
-    });
-  }
-  function swapLocalAvatar(gender='male'){
-    if (local.parts){
-      scene.remove(local.parts.group);
-      disposeGroup(local.parts.group);
-    }
-    const parts = buildStylizedChar({ gender, skin:0xffe4c4, suit:0x2a2f3b, accent:0xffffff, withDome:true, withPack:true, scale:0.22 });
-    local.parts = parts; scene.add(parts.group);
-    if (local.name) { parts.group.add(makeNameSprite(local.name)); }
-    // konumu koru
-    if (local.x!=null && local.z!=null){
-      parts.group.position.set(local.x, 0, local.z);
-    }
-  }
-
 
   // Local/Remote
-  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{}, x:0, z:0 };
+  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{} };
   {
-        // İlk kurulum: (default female işaretli)
-    swapLocalAvatar(selectedGender);
+    const parts = buildStylizedChar(0xffe4c4);
     local.parts = parts; scene.add(parts.group);
   }
   const remotes = new Map();
-    function ensureRemote(p){
-      let R = remotes.get(p.id);
-      if (!R) {
-        const gender = (p.gender === 'female') ? 'female' : 'male';
-        const parts = buildStylizedChar({ gender, skin:0xadd8e6, suit:0x2a2f3b, accent:0xffffff, scale:0.22 });
-        parts.group.position.set(p.x, 0, p.z);
-        const tag = makeNameSprite(p.name || `Yogi-${String(p.id).slice(0,4)}`);
-        parts.group.add(tag);
-        R = { parts, tag, name: p.name || `Yogi-${String(p.id).slice(0,4)}` };
-        scene.add(parts.group);
-        remotes.set(p.id, R);
-      }
-      return R;
+  function ensureRemote(p){
+    let R = remotes.get(p.id);
+    if (!R) {
+      const parts = buildStylizedChar(0xadd8e6);
+      parts.group.position.set(p.x, 0, p.z);
+      const tag = makeNameSprite(p.name || `Yogi-${p.id.slice(0,4)}`);
+      parts.group.add(tag);
+      R = { parts, tag, name: p.name || `Yogi-${p.id.slice(0,4)}` };
+      scene.add(parts.group);
+      remotes.set(p.id, R);
     }
-
+    return R;
+  }
   function updateNameTag(holder, name){
     if (holder.tag) {
       holder.parts.group.remove(holder.tag);
@@ -560,14 +369,9 @@
   playBtn.addEventListener("click", () => {
     cta.style.display = "none";
     const desired = (nameInput.value||"").trim().slice(0,20);
-    if (desired) { local.name = desired; }
-    // Lokal modeli anında değiştir
-    swapLocalAvatar(selectedGender);
-    // Sunucuya ilet
-    socket.emit("profile:update", { name: desired || undefined, gender: selectedGender });
+    if (desired) { socket.emit("profile:update", { name: desired }); local.name = desired; if (local.tag) updateNameTag(local, desired); }
     renderer.domElement.requestPointerLock();
   });
-
   document.addEventListener("pointerlockchange", () => {
     if (document.pointerLockElement !== renderer.domElement) cta.style.display = "flex";
   });
@@ -625,21 +429,13 @@
 
   // Sockets
   socket.on("bootstrap", ({ you, players, hotspots, planets }) => {
-    // --- Kimlik & puan ---
-    local.id = you.id;
-    local.name = you.name;
+    // --- senin mevcut kullanıcı bootstrap'in ---
+    local.id = you.id; 
+    local.name = you.name; 
     local.points = you.points || 0;
     pointsEl.textContent = `Points: ${local.points}`;
-
-    // --- Gender -> yerel avatarı oluştur/yenile ---
-    if (you.gender === 'female' || you.gender === 'male') {
-      selectedGender = you.gender;
-    }
-    // Pozisyon/rotasyon bilgilerini local’e yaz ki swapLocalAvatar sonrası korunabilsin
-    local.x = you.x; local.z = you.z; local.yaw = you.ry || 0;
-    swapLocalAvatar(selectedGender);
-
-    // İsim etiketi
+    local.parts.group.position.set(you.x, 0, you.z);
+    local.yaw = you.ry || 0;
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
     // --- PAD yerleştirme (Totem filtresi yok) ---
@@ -667,50 +463,49 @@
 
     // --- gezegenler & oyuncular ---
     (planets || []).forEach(addPlanet);
-    (players || []).forEach(p => {
-      const R = ensureRemote(p);
-      updateNameTag(R, p.name || R.name);
+    (players || []).forEach(p => { 
+      const R = ensureRemote(p); 
+      updateNameTag(R, p.name || R.name); 
     });
   });
 
-  socket.on("player-joined", (p) => {
-    if (p.id !== local.id){
-      const R = ensureRemote(p);
-      updateNameTag(R, p.name || R.name);
+  socket.on("player-joined", (p) => { 
+    if (p.id !== local.id){ 
+      const R = ensureRemote(p); 
+      updateNameTag(R, p.name || R.name); 
     }
   });
 
-  socket.on("player-left", (id) => {
-    const R = remotes.get(id);
-    if (R){ scene.remove(R.parts.group); remotes.delete(id); }
+  socket.on("player-left", (id) => { 
+    const R = remotes.get(id); 
+    if (R){ scene.remove(R.parts.group); remotes.delete(id); } 
   });
 
   socket.on("player:name", ({id,name}) => {
-    if (id === local.id){
-      local.name = name;
-      updateNameTag(local, name);
+    if (id === local.id){ 
+      local.name = name; 
+      updateNameTag(local, name); 
     }
-    const R = remotes.get(id);
+    const R = remotes.get(id); 
     if (R) updateNameTag(R, name);
   });
 
   socket.on("chat:msg", ({ from, text }) => {
     const p = document.createElement("p");
     p.innerHTML = `<b>[${from.rank}] ${from.name}:</b> ${text}`;
-    chatLog.appendChild(p);
+    chatLog.appendChild(p); 
     chatLog.scrollTop = chatLog.scrollHeight;
   });
 
   socket.on("points:update", ({ total, delta, reason }) => {
-    local.points = total;
+    local.points = total; 
     pointsEl.textContent = `Points: ${local.points}`;
     showToast(`${delta>0?'+':''}${delta}  ${reason}`);
   });
 
-  socket.on("quest:update", ({code, progress, goal}) =>
+  socket.on("quest:update", ({code, progress, goal}) => 
     showToast(`Görev: ${code} ${progress}/${goal}`)
   );
-
 
   // ==== Emote animasyonları (farklı hareketler) ====
   const emoteTokens = new Map();
