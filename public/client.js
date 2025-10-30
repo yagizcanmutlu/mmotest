@@ -100,6 +100,55 @@
   }
   function showToast(text){ toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
 
+    // --- GLB tabanlı player oluşturucu ---
+  function buildPlayerFromGLB(name = "Player"){
+    const holder = new THREE.Group();
+    const clone = baseCharGLB.clone(true);
+
+    // Ayağı zemine alsın + ölçek: ~1.75m
+    const bbox = new THREE.Box3().setFromObject(clone);
+    const height = bbox.max.y - bbox.min.y || 1;
+    const scale = 1.75 / height;
+    clone.scale.setScalar(scale);
+    const yOff = -bbox.min.y * scale;
+    clone.position.y = yOff;
+
+    // gölge
+    clone.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; }});
+
+    holder.add(clone);
+    const tag = makeNameSprite(name);
+    holder.add(tag);
+    // local kodla uyum için aynı alan adları
+    return { group: holder, tag, isGLB: true, torso: {material:{color:new THREE.Color(0xffffff)}} };
+  }
+
+    // --- Karakter GLB preload: /public/models/readyplayermale_cyberpunk.glb ---
+  gltfLoader.load('/models/readyplayermale_cyberpunk.glb', (gltf)=>{
+    baseCharGLB = gltf.scene;
+    // Oyuncu sahnedeyse anında GLB'ye geç
+    swapLocalToGLB();
+  }, undefined, (e)=>console.error('Karakter GLB yüklenemedi:', e));
+
+
+  function swapLocalToGLB(){
+    if (!baseCharGLB) return;
+    if (local.parts?.isGLB) return;
+
+    const pos = local.parts.group.position.clone();
+    const yaw = local.parts.group.rotation.y;
+    scene.remove(local.parts.group);
+    disposeGroup(local.parts.group);
+
+    const built = buildPlayerFromGLB(local.name || "You");
+    local.parts = built;
+    scene.add(built.group);
+    built.group.position.copy(pos);
+    built.group.rotation.y = yaw;
+    if (local.name) updateNameTag(local, local.name);
+  }
+
+
   // Basit dispose
   function disposeGroup(g){
     if (!g) return;
@@ -170,20 +219,29 @@
 
   function ensureRemote(p){
     let R = remotes.get(p.id);
-    if (!R) {
+    if (R) return R;
+
+    let parts;
+    if (baseCharGLB){
+      const built = buildPlayerFromGLB(p.name || `Yogi-${String(p.id).slice(0,4)}`);
+      parts = built;
+    } else {
       const isFemale = (p.gender === 'female');
       const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
       const accent  = isFemale ? 0xff3a66 : 0xffffff;
-      const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
-      parts.group.position.set(p.x||0, 0, p.z||0);
-      const tag = makeNameSprite(p.name || `Yogi-${String(p.id).slice(0,4)}`);
-      parts.group.add(tag);
-      R = { id: p.id, parts, tag, name: p.name || `Yogi-${String(p.id).slice(0,4)}`, gender: isFemale?'female':'male' };
-      scene.add(parts.group);
-      remotes.set(p.id, R);
+      parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
     }
+
+    parts.group.position.set(p.x||0, 0, p.z||0);
+    const tag = makeNameSprite(p.name || `Yogi-${String(p.id).slice(0,4)}`);
+    parts.group.add(tag);
+
+    R = { id: p.id, parts, tag, name: p.name || `Yogi-${String(p.id).slice(0,4)}`, gender: p.gender || 'female' };
+    scene.add(parts.group);
+    remotes.set(p.id, R);
     return R;
   }
+
 
   function updateNameTag(holder, name){
     if (holder.tag) {
@@ -398,6 +456,27 @@
     );
   }
 
+    // --- GLB Loader (DRACO destekli) ---
+  const gltfLoader = new THREE.GLTFLoader();
+  const draco = new THREE.DRACOLoader();
+  draco.setDecoderPath('https://unpkg.com/three@0.152.2/examples/js/libs/draco/');
+  gltfLoader.setDRACOLoader(draco);
+
+  // Global referanslar
+  let baseCharGLB = null;   // karakter GLB (readyplayermale_cyberpunk.glb)
+
+  // --- Cyberpunk araba: /public/models/cyberpunk_car.glb ---
+  gltfLoader.load('/models/cyberpunk_car.glb', (g) => {
+    const car = g.scene;
+    car.scale.set(0.9, 0.9, 0.9);
+    car.position.set(6, 0, 12);
+    car.rotation.y = Math.PI / 4;
+    car.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; }});
+    scene.add(car);
+  }, undefined, (e)=>console.warn('Araba GLB yüklenemedi:', e));
+
+
+
   // Input
   const keys = new Set();
   let chatFocus = false;
@@ -422,6 +501,8 @@
 
     // HEMEN lokal avatarı cinsiyete göre değiştir
     swapLocalAvatar(selectedGender);
+    swapLocalToGLB(); // GLB yüklüyse avatarı GLB'ye çevir
+
 
     // Sunucuya profil + (bazı sunucular için) join
     socket.emit("profile:update", { name: desired || undefined, gender: selectedGender });
@@ -501,6 +582,8 @@
     }
     // Avatarı (seçili gender) ile kur
     swapLocalAvatar(selectedGender);
+    swapLocalToGLB(); // GLB hazırsa local avatarı GLB yap
+
     local.parts.group.position.set(local.x, 0, local.z);
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
