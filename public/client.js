@@ -166,57 +166,54 @@
   // === SpaceBase Disc + LED Ring (hotspot pad) ================================
   const _spaceBaseHotspotMeshes = new Map();
 
-  // === SpaceBase Disc (cylinder base + solid top + LED ring) ==================
+  // === SpaceBase Disc (always-visible fill + LED ring) ========================
   function _createSpaceBaseDiscMesh(radius, opts = {}) {
     const p = {
-      baseColor: 0x1b2432,       // platform gövde rengi
-      topColor:  0x223249,       // üst kapak (bir ton açık)
-      ringColor: 0x66ccff,       // LED renk
+      fillColor: 0x2a4c7a,   // iç disk rengi (zeminden belirgin)
+      ringColor: 0x66ccff,
       ringInner: 0.86,
       ringOuter: 1.02,
-      height:    0.12,           // platform kalınlığı
-      gap:       0.004,          // top cap ile LED arasında çok ince boşluk
+      gap: 0.002,
       ...opts
     };
 
     const group = new THREE.Group();
     group.name = "SpaceBasePad";
 
-    // --- 1) GÖVDE: ince silindir (zeminden net ayrışır) ----------------------
-    const bodyR = radius * (p.ringInner - p.gap);
-    const body = new THREE.Mesh(
-      new THREE.CylinderGeometry(bodyR, bodyR, p.height, 96, 1, false),
-      new THREE.MeshStandardMaterial({
-        color: p.baseColor,
-        roughness: 0.85,
-        metalness: 0.18,
-        polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: 4
+    // 1) İÇ DİSK — depthTest=false => her zaman görünür
+    const fillR = radius * (p.ringInner - p.gap);
+    const base = new THREE.Mesh(
+      new THREE.CircleGeometry(fillR, 128),
+      new THREE.MeshBasicMaterial({
+        color: p.fillColor,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false   // <-- kilit
       })
     );
-    body.position.y = p.height * 0.5 + 0.02; // zeminden yukarıda
-    body.castShadow = false;
-    body.receiveShadow = true;
-    body.renderOrder = 2;
-    group.add(body);
+    base.rotation.x = -Math.PI/2;
+    base.position.y = 0.05;      // zeminden biraz yukarı
+    base.renderOrder = 998;      // LED’in hemen altı
+    group.add(base);
 
-    // --- 2) ÜST KAPAK: ayrı mesh (kesin görünür) -----------------------------
-    const top = new THREE.Mesh(
-      new THREE.CircleGeometry(bodyR * 0.999, 128),
-      new THREE.MeshStandardMaterial({
-        color: p.topColor,
-        roughness: 0.78,
-        metalness: 0.22,
-        side: THREE.DoubleSide,
-        polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: 6
+    // 2) (Opsiyonel) Overlay – additive çizgiler (istersen kalsın)
+    // Dilersen kapat: sadece iç diski istiyorsan bu bloğu yorumlayabilirsin.
+    const overlay = new THREE.Mesh(
+      new THREE.CircleGeometry(fillR * 0.998, 128),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.10,
+        depthTest: false,
+        blending: THREE.AdditiveBlending
       })
     );
-    top.rotation.x = -Math.PI/2;
-    top.position.y = body.position.y + p.height * 0.5 + 0.002; // gövdenin tepesinin hemen üstünde
-    top.receiveShadow = true;
-    top.renderOrder = 3;
-    group.add(top);
+    overlay.rotation.x = -Math.PI/2;
+    overlay.position.y = base.position.y + 0.001;
+    overlay.renderOrder = 999;
+    group.add(overlay);
 
-    // --- 3) LED HALKA ---------------------------------------------------------
+    // 3) LED HALKA — mevcut gibi
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(radius * p.ringInner, radius * p.ringOuter, 128),
       new THREE.MeshBasicMaterial({
@@ -229,26 +226,21 @@
       })
     );
     ring.rotation.x = -Math.PI/2;
-    ring.position.y = top.position.y + 0.003;
-    ring.renderOrder = 4;
+    ring.position.y = overlay.position.y + 0.003;
+    ring.renderOrder = 1000;
     group.add(ring);
 
-    // nefes efekti (LED)
+    // nefes efekti
     group.onBeforeRender = () => {
-      const t = performance.now() * 0.001;
-      ring.material.opacity = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(t * 2.6));
+      const t = performance.now()*0.001;
+      ring.material.opacity = 0.35 + 0.35*(0.5+0.5*Math.sin(t*2.6));
     };
-
-    // DEBUG: bir kere log at, gerçekten eklendi mi görelim
-    setTimeout(() => console.log("[SpaceBase] pad eklendi:", { bodyR, y: body.position.y }), 0);
 
     return group;
   }
 
-
-
+  // addHotspotDisk (aynen, küçük bir güvenlik: frustum kapatma + log)
   function addHotspotDisk(name, x, z, r){
-    // öncekini temizle
     const prev = _spaceBaseHotspotMeshes.get(name);
     if (prev) { scene.remove(prev); prev.traverse(o=>{
       if (o.isMesh){ o.geometry.dispose(); o.material.dispose?.(); }
@@ -256,10 +248,14 @@
 
     const grp = _createSpaceBaseDiscMesh(r);
     grp.position.set(x, 0, z);
+    grp.traverse(o => o.frustumCulled = false);  // <-- kamera kırpma kapalı
     scene.add(grp);
 
     _spaceBaseHotspotMeshes.set(name, grp);
     hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
+
+    // debug: konsolda bir kere gör
+    setTimeout(()=>console.log("[Pad] spawned", name, {x, z, r}), 0);
   }
 
 
