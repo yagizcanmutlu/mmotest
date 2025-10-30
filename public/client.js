@@ -179,7 +179,7 @@
       ringColor: 0x66ccff,
       ringInner: 0.86,   // LED iç yarıçapı (radius * ringInner)
       ringOuter: 1.02,   // LED dış yarıçapı
-      fillGap: 0.005,    // disk ile LED arasında çok ince boşluk
+      fillGap: 0.000,    // disk ile LED arasında çok ince boşluk
       ...opts
     };
 
