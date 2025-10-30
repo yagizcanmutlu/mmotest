@@ -10,6 +10,7 @@
     #root{height:100dvh;width:100vw;overflow:hidden;position:relative}
 
     .hud{position:absolute;top:12px;left:12px;display:flex;gap:10px;align-items:center;z-index:10}
+    
     .logo{color:#8ef;font-weight:800;letter-spacing:.3px;text-shadow:0 0 8px #48f}
     .points{padding:6px 10px;border:1px solid #2a5;border-radius:8px;color:#aef;background:rgba(10,30,18,.35);backdrop-filter:blur(4px)}
     .help-btn{margin-left:8px; width:32px;height:32px;border-radius:8px;border:1px solid #234;background:rgba(8,10,20,.6);color:#9cf;cursor:pointer;font-weight:800}
@@ -41,15 +42,7 @@
     #stick{position:absolute;left:50%;top:50%;width:56px;height:56px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(80,180,255,.35);border:1px solid #2a4}
     #lookpad{position:absolute;right:0;bottom:0;width:40vw;height:55vh;z-index:11;touch-action:none}
 
-    @media (max-width: 900px){
-      .chat{width:260px}
-      .chat-log{height:120px}
-    }
-  </style>
-
-  <!-- CSS (ekle) -->
-  <style>
-    .seg{
+        .seg{
       display:inline-grid;grid-auto-flow:column;gap:6px;background:rgba(8,10,20,.6);
       border:1px solid #234;border-radius:12px;padding:6px;user-select:none
     }
@@ -59,6 +52,51 @@
       border:1px solid transparent;font-weight:700;letter-spacing:.2px
     }
     .seg input:checked + label{background:#1a2738;border-color:#29549b;color:#e7f0ff;box-shadow:0 0 0 2px rgba(41,84,155,.25) inset}
+
+        /* Sağ üst HUD konteyneri */
+    #hud-top-right{
+      position: fixed;
+      top: 12px;
+      right: 14px;
+      display: flex;
+      flex-direction: column; /* alt alta; yatay istersen row yap */
+      align-items: flex-end;
+      gap: 6px;
+      z-index: 99999;          /* en üstte */
+      pointer-events: none;    /* tıklamalar sahneye geçsin */
+    }
+    #hud-top-right > div{
+      pointer-events: auto;    /* hover mümkün olsun */
+      background: rgba(0,0,0,.45);
+      backdrop-filter: blur(4px);
+      color: #d9ecff;
+      font: 600 14px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      padding: 6px 10px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.4);
+    }
+
+    /* Gender renk ayrımı */
+    #hudGender.-male{   color:#9ad1ff; }
+    #hudGender.-female{ color:#ff77aa; }
+
+    /* Giriş panelindeki gender seçim stili */
+    .gender-select{
+      display:flex; gap:12px; margin-top:10px;
+      background: rgba(0,0,0,.35);
+      padding:8px 10px; border-radius:10px;
+    }
+    .gender-select label{
+      display:flex; align-items:center; gap:6px;
+      color:#e7f4ff; font-weight:600; cursor:pointer;
+    }
+    .gender-select input{ transform: scale(1.1); }
+
+
+    @media (max-width: 900px){
+      .chat{width:260px}
+      .chat-log{height:120px}
+    }
   </style>
 
 
@@ -89,17 +127,19 @@
       <div class="card">
         <h1>Agora'ya katıl</h1>
         <input id="nameInput" placeholder="Görünen adın (ör. Yogi)" maxlength="20" />
+        <div class="seg" style="margin-top:6px">
+          <input type="radio" id="avatar1" name="avatar" value="1" checked />
+          <label for="avatar1">Avatar 1</label>
+          <input type="radio" id="avatar2" name="avatar" value="2" />
+          <label for="avatar2">Avatar 2</label>
+          <input type="radio" id="avatar3" name="avatar" value="3" />
+          <label for="avatar3">Avatar 3</label>
+        </div>
         <button id="playBtn">Giriş (WASD + Fare • Mobil: Joystick)</button>
       </div>
     </div>
 
-        <!-- CTA kartında, nameInput'un altına EKLE -->
-    <div class="seg" style="margin-top:6px">
-      <input id="genderFemale" name="gender" type="radio" value="female" checked>
-      <label for="genderFemale">Kadın</label>
-      <input id="genderMale" name="gender" type="radio" value="male">
-      <label for="genderMale">Erkek</label>
-    </div>
+
 
 
     <div class="chat">
