@@ -166,58 +166,104 @@
   // === SpaceBase Disc + LED Ring (hotspot pad) ================================
   const _spaceBaseHotspotMeshes = new Map();
 
-  // === SpaceBase Disc (always-visible fill + LED ring) ========================
   function _createSpaceBaseDiscMesh(radius, opts = {}) {
-    const p = {
-      fillColor: 0x2a4c7a,   // iç disk rengi (zeminden belirgin)
-      ringColor: 0x66ccff,
-      ringInner: 0.86,
-      ringOuter: 1.02,
-      gap: 0.002,
+    const params = {
+      tilesPerUnit: 2.8,
+      groove: 0.03,
+      bevel: 0.015,
+      stripeDensity: 7.0,
+      emissiveK: 1.35,
+      caution: new THREE.Color("#ffd166"),
+      baseColor: 0x131a24,
       ...opts
     };
 
-    const group = new THREE.Group();
-    group.name = "SpaceBasePad";
+    const mat = new THREE.MeshStandardMaterial({
+      color: params.baseColor,
+      roughness: 0.95,
+      metalness: 0.08
+    });
 
-    // 1) İÇ DİSK — depthTest=false => her zaman görünür
-    const fillR = radius * (p.ringInner - p.gap);
-    const base = new THREE.Mesh(
-      new THREE.CircleGeometry(fillR, 128),
-      new THREE.MeshBasicMaterial({
-        color: p.fillColor,
-        transparent: true,
-        opacity: 0.95,
-        depthTest: false   // <-- kilit
-      })
-    );
-    base.rotation.x = -Math.PI/2;
-    base.position.y = 0.05;      // zeminden biraz yukarı
-    base.renderOrder = 998;      // LED’in hemen altı
-    group.add(base);
+    // shader overlay (paneller + neon şerit)
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.uniforms.uTiles = { value: params.tilesPerUnit };
+      shader.uniforms.uGroove = { value: params.groove };
+      shader.uniforms.uBevel = { value: params.bevel };
+      shader.uniforms.uStripeDensity = { value: params.stripeDensity };
+      shader.uniforms.uEmissiveK = { value: params.emissiveK };
+      shader.uniforms.uCaution = { value: params.caution };
 
-    // 2) (Opsiyonel) Overlay – additive çizgiler (istersen kalsın)
-    // Dilersen kapat: sadece iç diski istiyorsan bu bloğu yorumlayabilirsin.
-    const overlay = new THREE.Mesh(
-      new THREE.CircleGeometry(fillR * 0.998, 128),
-      new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.10,
-        depthTest: false,
-        blending: THREE.AdditiveBlending
-      })
-    );
-    overlay.rotation.x = -Math.PI/2;
-    overlay.position.y = base.position.y + 0.001;
-    overlay.renderOrder = 999;
-    group.add(overlay);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `
+          #include <common>
+          varying vec3 vWPos;
+        `)
+        .replace('#include <worldpos_vertex>', `
+          #include <worldpos_vertex>
+          vWPos = worldPosition.xyz;
+        `);
 
-    // 3) LED HALKA — mevcut gibi
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `
+          #include <common>
+          varying vec3 vWPos;
+          uniform float uTime, uTiles, uGroove, uBevel, uStripeDensity, uEmissiveK;
+          uniform vec3 uCaution;
+
+          float hash21(vec2 p){
+            p = fract(p*vec2(123.34,456.21));
+            p += dot(p, p+45.32);
+            return fract(p.x*p.y);
+          }
+          float grooveMask(vec2 p){
+            vec2 gv = fract(p) - 0.5;
+            vec2 dv = (0.5 - abs(gv));
+            float edge = min(dv.x, dv.y);
+            return 1.0 - smoothstep(uGroove-uBevel, uGroove+uBevel, edge);
+          }
+          float cautionStripes(vec2 p){
+            vec2 cell = floor(p);
+            vec2 gv = fract(p) - 0.5;
+            float rnd = hash21(cell);
+            if (rnd < 0.66) return 0.0;
+            float dens = uStripeDensity + floor(rnd*3.0);
+            float dir = (rnd>0.82)? 1.0 : -1.0;
+            float ramp = (abs(gv.x)>abs(gv.y)) ? gv.y : gv.x;
+            float s = fract(ramp*dens + (uTime*0.28)*dir);
+            float bar = step(0.5, s);
+            float edgeBand = smoothstep(0.12, 0.10, min(0.5-abs(gv.x), 0.5-abs(gv.y)));
+            return bar * edgeBand;
+          }
+        `)
+        .replace('#include <map_fragment>', `
+          #include <map_fragment>
+          vec2 p = vWPos.xz * uTiles;
+
+          float g = grooveMask(p);
+          diffuseColor.rgb *= (1.0 - g*0.18);
+
+          float s = cautionStripes(p);
+          float pulse = 0.6 + 0.4 * sin(uTime*3.0 + (p.x+p.y));
+          vec3 emiss = uCaution * (s * uEmissiveK * pulse);
+
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*0.75 + uCaution*0.25, s*0.85);
+          diffuseColor.rgb += emiss;
+        `);
+
+      mat.userData._shader = shader;
+    };
+
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 96), mat);
+    disc.rotation.x = -Math.PI/2;
+    disc.position.y = 0.01;
+    disc.receiveShadow = true;
+
+    // LED ring (additive parlayan çember)
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(radius * p.ringInner, radius * p.ringOuter, 128),
+      new THREE.RingGeometry(radius*0.94, radius*1.02, 128),
       new THREE.MeshBasicMaterial({
-        color: p.ringColor,
+        color: 0x66ccff,
         transparent: true,
         opacity: 0.55,
         blending: THREE.AdditiveBlending,
@@ -226,21 +272,25 @@
       })
     );
     ring.rotation.x = -Math.PI/2;
-    ring.position.y = overlay.position.y + 0.003;
-    ring.renderOrder = 1000;
-    group.add(ring);
+    ring.position.y = 0.015;
 
-    // nefes efekti
+    const group = new THREE.Group();
+    group.add(disc, ring);
+
     group.onBeforeRender = () => {
       const t = performance.now()*0.001;
+      // shader zamanı
+      const sh = disc.material.userData._shader;
+      if (sh) sh.uniforms.uTime.value = t;
+      // LED nefes efekti
       ring.material.opacity = 0.35 + 0.35*(0.5+0.5*Math.sin(t*2.6));
     };
 
     return group;
   }
 
-  // addHotspotDisk (aynen, küçük bir güvenlik: frustum kapatma + log)
   function addHotspotDisk(name, x, z, r){
+    // öncekini temizle
     const prev = _spaceBaseHotspotMeshes.get(name);
     if (prev) { scene.remove(prev); prev.traverse(o=>{
       if (o.isMesh){ o.geometry.dispose(); o.material.dispose?.(); }
@@ -248,14 +298,10 @@
 
     const grp = _createSpaceBaseDiscMesh(r);
     grp.position.set(x, 0, z);
-    grp.traverse(o => o.frustumCulled = false);  // <-- kamera kırpma kapalı
     scene.add(grp);
 
     _spaceBaseHotspotMeshes.set(name, grp);
     hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
-
-    // debug: konsolda bir kere gör
-    setTimeout(()=>console.log("[Pad] spawned", name, {x, z, r}), 0);
   }
 
 
