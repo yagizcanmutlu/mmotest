@@ -310,6 +310,10 @@ function _createSpaceBaseDiscMesh(radius, opts = {}) {
   return group;
 }
 
+  // PATCH: base diski kesin görünür yap
+  base.material.depthTest = false; base.renderOrder = 999;
+
+
   function addHotspotDisk(name, x, z, r){
     // öncekini temizle
     const prev = _spaceBaseHotspotMeshes.get(name);
