@@ -166,23 +166,142 @@
   // === SpaceBase Disc + LED Ring (hotspot pad) ================================
   const _spaceBaseHotspotMeshes = new Map();
 
+  // === SpaceBase Disc (INSIDE FILL + LED RING) ================================
   function _createSpaceBaseDiscMesh(radius, opts = {}) {
     const params = {
-      tilesPerUnit: 2.8,
-      groove: 0.03,
-      bevel: 0.015,
-      stripeDensity: 7.0,
-      emissiveK: 1.35,
+      tilesPerUnit: 2.9,      // panel sıklığı
+      groove: 0.03,           // oluk kalınlığı
+      bevel: 0.015,           // oluk yumuşatma
+      stripeDensity: 7.0,     // uyarı şeridi sıklığı
+      emissiveK: 1.35,        // şerit parlaklığı
       caution: new THREE.Color("#ffd166"),
-      baseColor: 0x131a24,
+      baseColor: 0x1b2432,    // disk ana rengi (zeminden bir ton açık)
+      ringColor: 0x66ccff,    // LED çember rengi
+      ringInner: 0.86,        // çember iç yarıçapı (radius * ringInner)
+      ringOuter: 1.02,        // çember dış yarıçapı (radius * ringOuter)
       ...opts
     };
 
-    const mat = new THREE.MeshStandardMaterial({
+    // --- İç DİSK (kaplama uygulanacak) ---
+    // Disk, LED'in biraz içine otursun ki çakışma olmasın
+    const diskGeo = new THREE.CircleGeometry(radius * (params.ringInner - 0.02), 128);
+    const diskMat = new THREE.MeshStandardMaterial({
       color: params.baseColor,
-      roughness: 0.95,
-      metalness: 0.08
+      roughness: 0.8,
+      metalness: 0.2
     });
+
+    // Shader overlay (paneller + neon şeritler)
+    diskMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.uniforms.uTiles = { value: params.tilesPerUnit };
+      shader.uniforms.uGroove = { value: params.groove };
+      shader.uniforms.uBevel = { value: params.bevel };
+      shader.uniforms.uStripeDensity = { value: params.stripeDensity };
+      shader.uniforms.uEmissiveK = { value: params.emissiveK };
+      shader.uniforms.uCaution = { value: params.caution };
+
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `
+          #include <common>
+          varying vec3 vWPos;
+        `)
+        .replace('#include <worldpos_vertex>', `
+          #include <worldpos_vertex>
+          vWPos = worldPosition.xyz;
+        `);
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `
+          #include <common>
+          varying vec3 vWPos;
+          uniform float uTime, uTiles, uGroove, uBevel, uStripeDensity, uEmissiveK;
+          uniform vec3 uCaution;
+
+          float hash21(vec2 p){
+            p = fract(p*vec2(123.34,456.21));
+            p += dot(p, p+45.32);
+            return fract(p.x*p.y);
+          }
+          float grooveMask(vec2 p){
+            vec2 gv = fract(p) - 0.5;
+            vec2 dv = (0.5 - abs(gv));
+            float edge = min(dv.x, dv.y);
+            return 1.0 - smoothstep(uGroove-uBevel, uGroove+uBevel, edge);
+          }
+          float cautionStripes(vec2 p){
+            vec2 cell = floor(p);
+            vec2 gv = fract(p) - 0.5;
+            float rnd = hash21(cell);
+            if (rnd < 0.66) return 0.0;
+            float dens = uStripeDensity + floor(rnd*3.0);
+            float dir = (rnd>0.82)? 1.0 : -1.0;
+            float ramp = (abs(gv.x)>abs(gv.y)) ? gv.y : gv.x;
+            float s = fract(ramp*dens + (uTime*0.28)*dir);
+            float bar = step(0.5, s);
+            float edgeBand = smoothstep(0.12, 0.10, min(0.5-abs(gv.x), 0.5-abs(gv.y)));
+            return bar * edgeBand;
+          }
+        `)
+        .replace('#include <map_fragment>', `
+          #include <map_fragment>
+          // Dünya XZ koordinatı (yalnızca bu disk materyaline uygulanıyor)
+          vec2 p = vWPos.xz * uTiles;
+
+          // Oluklarda fake AO
+          float g = grooveMask(p);
+          diffuseColor.rgb *= (1.0 - g*0.18);
+
+          // Uyarı şeritleri + emissive
+          float s = cautionStripes(p);
+          float pulse = 0.6 + 0.4 * sin(uTime*3.0 + (p.x+p.y));
+          vec3 emiss = uCaution * (s * uEmissiveK * pulse);
+
+          // Boya karışımı
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*0.75 + uCaution*0.25, s*0.85);
+          diffuseColor.rgb += emiss;
+
+          // Hafif merkez vinyet (derinlik hissi)
+          float r = length(p) * 0.02;
+          diffuseColor.rgb *= (1.03 - 0.08 * smoothstep(0.0, 1.2, r));
+        `);
+
+      diskMat.userData._shader = shader;
+    };
+
+    const disk = new THREE.Mesh(diskGeo, diskMat);
+    disk.rotation.x = -Math.PI/2;
+    disk.position.y = 0.01;      // zeminden biraz yukarı
+    disk.receiveShadow = true;
+
+    // --- LED RING (nefes efekti) ---
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius * params.ringInner, radius * params.ringOuter, 128),
+      new THREE.MeshBasicMaterial({
+        color: params.ringColor,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = 0.015;
+
+    const group = new THREE.Group();
+    group.add(disk, ring);
+
+    group.onBeforeRender = () => {
+      const t = performance.now()*0.001;
+      const sh = disk.material.userData._shader;
+      if (sh) sh.uniforms.uTime.value = t;
+      ring.material.opacity = 0.35 + 0.35*(0.5+0.5*Math.sin(t*2.6));
+    };
+
+    return group;
+  }
+
 
     // shader overlay (paneller + neon şerit)
     mat.onBeforeCompile = (shader) => {
