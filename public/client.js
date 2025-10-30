@@ -166,32 +166,35 @@
   // === SpaceBase Disc + LED Ring (hotspot pad) ================================
   const _spaceBaseHotspotMeshes = new Map();
 
-  // === SpaceBase Disc (INSIDE FILL + LED RING) ================================
+  // === SpaceBase Disc (FULL INSIDE FILL + LED RING, anti z-fighting) =========
   function _createSpaceBaseDiscMesh(radius, opts = {}) {
     const params = {
-      tilesPerUnit: 2.9,      // panel sıklığı
-      groove: 0.03,           // oluk kalınlığı
-      bevel: 0.015,           // oluk yumuşatma
-      stripeDensity: 7.0,     // uyarı şeridi sıklığı
-      emissiveK: 1.35,        // şerit parlaklığı
+      tilesPerUnit: 2.9,
+      groove: 0.03,
+      bevel: 0.015,
+      stripeDensity: 7.0,
+      emissiveK: 1.35,
       caution: new THREE.Color("#ffd166"),
-      baseColor: 0x1b2432,    // disk ana rengi (zeminden bir ton açık)
-      ringColor: 0x66ccff,    // LED çember rengi
-      ringInner: 0.86,        // çember iç yarıçapı (radius * ringInner)
-      ringOuter: 1.02,        // çember dış yarıçapı (radius * ringOuter)
+      baseColor: 0x1b2432,
+      ringColor: 0x66ccff,
+      ringInner: 0.86,   // LED iç yarıçapı (radius * ringInner)
+      ringOuter: 1.02,   // LED dış yarıçapı
+      fillGap: 0.005,    // disk ile LED arasında çok ince boşluk
       ...opts
     };
 
-    // --- İç DİSK (kaplama uygulanacak) ---
-    // Disk, LED'in biraz içine otursun ki çakışma olmasın
-    const diskGeo = new THREE.CircleGeometry(radius * (params.ringInner - 0.02), 128);
+    // --- İç Disk ---
+    const fillR = radius * (params.ringInner - params.fillGap); // neredeyse içi komple doldur
+    const diskGeo = new THREE.CircleGeometry(fillR, 128);
     const diskMat = new THREE.MeshStandardMaterial({
       color: params.baseColor,
       roughness: 0.8,
-      metalness: 0.2
+      metalness: 0.2,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,   // zeminin üstüne it
+      polygonOffsetUnits: 2
     });
 
-    // Shader overlay (paneller + neon şeritler)
     diskMat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = { value: 0 };
       shader.uniforms.uTiles = { value: params.tilesPerUnit };
@@ -245,23 +248,19 @@
         `)
         .replace('#include <map_fragment>', `
           #include <map_fragment>
-          // Dünya XZ koordinatı (yalnızca bu disk materyaline uygulanıyor)
           vec2 p = vWPos.xz * uTiles;
 
-          // Oluklarda fake AO
           float g = grooveMask(p);
           diffuseColor.rgb *= (1.0 - g*0.18);
 
-          // Uyarı şeritleri + emissive
           float s = cautionStripes(p);
           float pulse = 0.6 + 0.4 * sin(uTime*3.0 + (p.x+p.y));
           vec3 emiss = uCaution * (s * uEmissiveK * pulse);
 
-          // Boya karışımı
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*0.75 + uCaution*0.25, s*0.85);
           diffuseColor.rgb += emiss;
 
-          // Hafif merkez vinyet (derinlik hissi)
+          // Hafif merkez vinyet
           float r = length(p) * 0.02;
           diffuseColor.rgb *= (1.03 - 0.08 * smoothstep(0.0, 1.2, r));
         `);
@@ -271,10 +270,11 @@
 
     const disk = new THREE.Mesh(diskGeo, diskMat);
     disk.rotation.x = -Math.PI/2;
-    disk.position.y = 0.01;      // zeminden biraz yukarı
+    disk.position.y = 0.03;      // zeminin ÜSTÜNDE
     disk.receiveShadow = true;
+    disk.renderOrder = 2;
 
-    // --- LED RING (nefes efekti) ---
+    // --- LED Ring ---
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(radius * params.ringInner, radius * params.ringOuter, 128),
       new THREE.MeshBasicMaterial({
@@ -287,7 +287,8 @@
       })
     );
     ring.rotation.x = -Math.PI/2;
-    ring.position.y = 0.015;
+    ring.position.y = 0.035;
+    ring.renderOrder = 3;
 
     const group = new THREE.Group();
     group.add(disk, ring);
