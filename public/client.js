@@ -309,22 +309,43 @@
   const moonTex = new THREE.TextureLoader().load("https://happy358.github.io/Images/textures/lunar_color.jpg", t=>{
     t.colorSpace = THREE.SRGBColorSpace;
   });
-  function addPlanet(p){
-    const geo = new THREE.SphereGeometry(p.radius, 40, 40);
-    const mat = new THREE.MeshPhongMaterial({ color: p.color, map: moonTex, bumpMap: moonTex, bumpScale: 0.6 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(p.x, p.radius + 0.1, p.z);
-    mesh.rotation.x = -Math.PI/10;
-    mesh.castShadow = true; mesh.receiveShadow = true;
+  // En üste, gezegenler için global boyut çarpanı:
+  const PLANET_SIZE_MUL = 1.8;  // 1 = mevcut, 2 = iki katı, 1.3 = %30 büyük
 
+  function addPlanet(p){
+    // Yeni yarıçap
+    const R = (p.radius || 20) * (p.scale || PLANET_SIZE_MUL);
+
+    const geo = new THREE.SphereGeometry(R, 48, 48);
+    const mat = new THREE.MeshPhongMaterial({
+      color: p.color,
+      map: moonTex,
+      bumpMap: moonTex,
+      bumpScale: 0.6
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    // Yükseklik: yarıçap kadar yukarıda dursun (öncekine göre ölçekli)
+    mesh.position.set(p.x, R + 0.1, p.z);
+    mesh.rotation.x = -Math.PI/10;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    // Etiket konumu da yeni yarıçapa göre
     const label = makeNameSprite(p.name, "#9ef");
-    label.position.set(0, p.radius + 0.8, 0);
+    label.position.set(0, R + 0.8, 0);
     mesh.add(label);
 
     scene.add(mesh);
-    planetMeshes.push({ name:p.name, mesh, label });
-    hotspotInfo.set(`Planet:${p.name}`, { pos:new THREE.Vector3(p.x,0,p.z), r:p.r || (p.radius + 10) });
+    planetMeshes.push({ name: p.name, mesh, label, R });
+
+    // Yakınlık/hotspot yarıçapını da ölçekle (varsa p.r kullanılır)
+    hotspotInfo.set(
+      `Planet:${p.name}`,
+      { pos: new THREE.Vector3(p.x, 0, p.z), r: (p.r ? p.r * (p.scale || PLANET_SIZE_MUL) : (R + 10)) }
+    );
   }
+
 
   // Input
   const keys = new Set();
