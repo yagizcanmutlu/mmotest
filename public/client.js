@@ -14,6 +14,13 @@
   const stick = document.getElementById("stick");
   const lookpad = document.getElementById("lookpad");
 
+  // === Gender seçim binding (HTML tarafında <input name="gender" ...> var) ===
+  const genderRadios = document.querySelectorAll('input[name="gender"]');
+  let selectedGender = 'female';
+  genderRadios.forEach(r => r.addEventListener('change', e => {
+    selectedGender = e.target.value; // 'female' | 'male'
+  }));
+
   const socket = io();
 
   // Device: joystick sadece mobilde
@@ -83,8 +90,24 @@
   }
   function showToast(text){ toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
 
-  // Stylized Character (parça referanslarıyla)
-  function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff) {
+  // Basit dispose
+  function disposeGroup(g){
+    if (!g) return;
+    g.traverse(o=>{
+      if (o.isMesh){
+        o.geometry?.dispose?.();
+        if (Array.isArray(o.material)) o.material.forEach(m=>m?.dispose?.());
+        else o.material?.dispose?.();
+      }
+    });
+  }
+
+  // Stylized Character (parça referanslarıyla) — basit iki varyant
+  function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff, opts={}){
+    const scale = opts.scale ?? 0.20;
+    const legH = opts.legH ?? 0.5;
+    const legR = opts.legR ?? 0.18;
+
     const grp = new THREE.Group();
 
     const torso = new THREE.Mesh(
@@ -94,9 +117,9 @@
     grp.add(torso);
 
     const legMat = new THREE.MeshStandardMaterial({ color: primaryColor, roughness:.85 });
-    const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.18,0.5,6,12), legMat.clone());
-    const legR = legL.clone(); legL.position.set( 0.22,-1.0,0); legR.position.set(-0.22,-1.0,0);
-    grp.add(legL, legR);
+    const legL = new THREE.Mesh(new THREE.CapsuleGeometry(legR, legH, 6, 12), legMat.clone());
+    const legRMesh = legL.clone(); legL.position.set( 0.22,-1.0,0); legRMesh.position.set(-0.22,-1.0,0);
+    grp.add(legL, legRMesh);
 
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 20), new THREE.MeshStandardMaterial({ color: primaryColor }));
     head.position.set(0,1.2,0); grp.add(head);
@@ -123,30 +146,35 @@
     );
     dome.position.set(0,1.6,0); grp.add(dome);
 
-    grp.scale.set(0.20,0.20,0.20);
-    return { group: grp, torso, head, armL, armR, legL, legR };
+    grp.scale.set(scale, scale, scale);
+    return { group: grp, torso, head, armL, armR, legL, legR: legRMesh };
   }
 
-  // Local/Remote
-  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{} };
+  // Yerel ve uzak oyuncular
+  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{}, gender: 'female', x:0, z:0 };
   {
     const parts = buildStylizedChar(0xffe4c4);
     local.parts = parts; scene.add(parts.group);
   }
   const remotes = new Map();
+
   function ensureRemote(p){
     let R = remotes.get(p.id);
     if (!R) {
-      const parts = buildStylizedChar(0xadd8e6);
-      parts.group.position.set(p.x, 0, p.z);
-      const tag = makeNameSprite(p.name || `Yogi-${p.id.slice(0,4)}`);
+      const isFemale = (p.gender === 'female');
+      const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
+      const accent  = isFemale ? 0xff3a66 : 0xffffff;
+      const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
+      parts.group.position.set(p.x||0, 0, p.z||0);
+      const tag = makeNameSprite(p.name || `Yogi-${String(p.id).slice(0,4)}`);
       parts.group.add(tag);
-      R = { parts, tag, name: p.name || `Yogi-${p.id.slice(0,4)}` };
+      R = { id: p.id, parts, tag, name: p.name || `Yogi-${String(p.id).slice(0,4)}`, gender: isFemale?'female':'male' };
       scene.add(parts.group);
       remotes.set(p.id, R);
     }
     return R;
   }
+
   function updateNameTag(holder, name){
     if (holder.tag) {
       holder.parts.group.remove(holder.tag);
@@ -156,14 +184,38 @@
     holder.parts.group.add(holder.tag);
     holder.name = name;
   }
+
   function getDisplayName(id){
     if (id===local.id) return local.name || "You";
     const R = remotes.get(id); return (R && R.name) || `Yogi-${String(id).slice(0,4)}`;
   }
 
+  // === Avatar swap (gender değişince/bootstraptan sonra) ===
+  function swapLocalAvatar(gender='female'){
+    local.gender = gender;
+    const prev = local.parts;
+    const pos = prev?.group?.position?.clone?.() || new THREE.Vector3(local.x||0, 0, local.z||0);
+    const yaw = local.yaw || 0;
+
+    if (prev){
+      scene.remove(prev.group);
+      disposeGroup(prev.group);
+    }
+
+    const isFemale = (gender === 'female');
+    const bodyCol = isFemale ? 0xffd7d0 : 0xffe4c4;
+    const accent  = isFemale ? 0xff3a66 : 0xffffff;
+
+    const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
+    local.parts = parts;
+    scene.add(parts.group);
+    parts.group.position.copy(pos);
+    parts.group.rotation.y = yaw;
+    if (local.name) updateNameTag(local, local.name);
+  }
+
   // Hotspots & Planets (HALO YOK)
   const hotspotInfo = new Map();
-  // === SpaceBase Disc + LED Ring (hotspot pad) ================================
   const _spaceBaseHotspotMeshes = new Map();
 
   function _createSpaceBaseDiscMesh(radius, opts = {}) {
@@ -184,7 +236,6 @@
       metalness: 0.08
     });
 
-    // shader overlay (paneller + neon şerit)
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = { value: 0 };
       shader.uniforms.uTiles = { value: params.tilesPerUnit };
@@ -259,7 +310,7 @@
     disc.position.y = 0.01;
     disc.receiveShadow = true;
 
-    // LED ring (additive parlayan çember)
+    // LED ring
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(radius*0.94, radius*1.02, 128),
       new THREE.MeshBasicMaterial({
@@ -279,10 +330,8 @@
 
     group.onBeforeRender = () => {
       const t = performance.now()*0.001;
-      // shader zamanı
       const sh = disc.material.userData._shader;
       if (sh) sh.uniforms.uTime.value = t;
-      // LED nefes efekti
       ring.material.opacity = 0.35 + 0.35*(0.5+0.5*Math.sin(t*2.6));
     };
 
@@ -290,7 +339,6 @@
   }
 
   function addHotspotDisk(name, x, z, r){
-    // öncekini temizle
     const prev = _spaceBaseHotspotMeshes.get(name);
     if (prev) { scene.remove(prev); prev.traverse(o=>{
       if (o.isMesh){ o.geometry.dispose(); o.material.dispose?.(); }
@@ -304,16 +352,13 @@
     hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
   }
 
-
   const planetMeshes = [];
   const moonTex = new THREE.TextureLoader().load("https://happy358.github.io/Images/textures/lunar_color.jpg", t=>{
     t.colorSpace = THREE.SRGBColorSpace;
   });
-  // En üste, gezegenler için global boyut çarpanı:
-  const PLANET_SIZE_MUL = 1.8;  // 1 = mevcut, 2 = iki katı, 1.3 = %30 büyük
+  const PLANET_SIZE_MUL = 1.8;
 
   function addPlanet(p){
-    // Yeni yarıçap
     const R = (p.radius || 20) * (p.scale || PLANET_SIZE_MUL);
 
     const geo = new THREE.SphereGeometry(R, 48, 48);
@@ -325,13 +370,11 @@
     });
 
     const mesh = new THREE.Mesh(geo, mat);
-    // Yükseklik: yarıçap kadar yukarıda dursun (öncekine göre ölçekli)
     mesh.position.set(p.x, R + 0.1, p.z);
     mesh.rotation.x = -Math.PI/10;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
 
-    // Etiket konumu da yeni yarıçapa göre
     const label = makeNameSprite(p.name, "#9ef");
     label.position.set(0, R + 0.8, 0);
     mesh.add(label);
@@ -339,13 +382,11 @@
     scene.add(mesh);
     planetMeshes.push({ name: p.name, mesh, label, R });
 
-    // Yakınlık/hotspot yarıçapını da ölçekle (varsa p.r kullanılır)
     hotspotInfo.set(
       `Planet:${p.name}`,
       { pos: new THREE.Vector3(p.x, 0, p.z), r: (p.r ? p.r * (p.scale || PLANET_SIZE_MUL) : (R + 10)) }
     );
   }
-
 
   // Input
   const keys = new Set();
@@ -359,17 +400,24 @@
     keys.add(e.code);
     const em = { Digit1:"wave", Digit2:"dance", Digit3:"sit", Digit4:"clap", Digit5:"point", Digit6:"cheer" };
     if (em[e.code]) socket.emit("emote:play", em[e.code]);
-    // Q = sola, E = sağa (mouse ile tutarlı)
     if (e.code === "KeyQ") local.yaw += 0.06;
     if (e.code === "KeyE") local.yaw -= 0.06;
   });
   window.addEventListener("keyup", (e)=> keys.delete(e.code));
 
-  // Pointer-lock look (desktop) — mouse sola çevirince sola dönsün
+  // Pointer-lock look (desktop)
   playBtn.addEventListener("click", () => {
-    cta.style.display = "none";
     const desired = (nameInput.value||"").trim().slice(0,20);
-    if (desired) { socket.emit("profile:update", { name: desired }); local.name = desired; if (local.tag) updateNameTag(local, desired); }
+    if (desired) { local.name = desired; if (local.tag) updateNameTag(local, desired); }
+
+    // HEMEN lokal avatarı cinsiyete göre değiştir
+    swapLocalAvatar(selectedGender);
+
+    // Sunucuya profil + (bazı sunucular için) join
+    socket.emit("profile:update", { name: desired || undefined, gender: selectedGender });
+    socket.emit("join", { name: desired || undefined, gender: selectedGender });
+
+    cta.style.display = "none";
     renderer.domElement.requestPointerLock();
   });
   document.addEventListener("pointerlockchange", () => {
@@ -381,7 +429,7 @@
     }
   });
 
-  // Drag look (sağ alan) — aynı yönde
+  // Drag look (sağ alan)
   let lookActive = false, lastLX = 0;
   function lookStart(x){ lookActive = true; lastLX = x; }
   function lookMove(x){ if (!lookActive) return; const dx = x - lastLX; lastLX = x; local.yaw -= dx * 0.003; }
@@ -402,13 +450,12 @@
     camDist = Math.min(10, Math.max(2, camDist));
   }, {passive:true});
 
-  // Mobile joystick (solda) — SADECE MOBİL ve merkezde
+  // Mobile joystick
   let joyActive = false, joyCenter = {x:0,y:0}, joyVec = {x:0,y:0};
   const stickHalf = () => (stick ? stick.getBoundingClientRect().width/2 : 0);
   function setStick(px,py){ if (!stick) return; stick.style.transform = `translate(${px - stickHalf()}px, ${py - stickHalf()}px)`; }
   function joyReset(){ joyActive=false; joyVec.x=0; joyVec.y=0; setStick(0,0); }
   if (isTouch && joy && stick){
-    // başlangıçta tam merkez
     setTimeout(joyReset, 0);
     function joyStart(cx,cy){ joyActive=true; const rect = joy.getBoundingClientRect(); joyCenter.x = rect.left + rect.width/2; joyCenter.y = rect.top + rect.height/2; updateJoy(cx,cy); }
     function updateJoy(px,py){
@@ -429,16 +476,25 @@
 
   // Sockets
   socket.on("bootstrap", ({ you, players, hotspots, planets }) => {
-    // --- senin mevcut kullanıcı bootstrap'in ---
-    local.id = you.id; 
-    local.name = you.name; 
+    // Kimlik & puan
+    local.id = you.id;
+    local.name = you.name;
     local.points = you.points || 0;
     pointsEl.textContent = `Points: ${local.points}`;
-    local.parts.group.position.set(you.x, 0, you.z);
-    local.yaw = you.ry || 0;
+
+    // Position & yaw
+    local.x = you.x; local.z = you.z; local.yaw = you.ry || 0;
+
+    // Gender server'dan gelmişse ona uy
+    if (you.gender === 'female' || you.gender === 'male') {
+      selectedGender = you.gender;
+    }
+    // Avatarı (seçili gender) ile kur
+    swapLocalAvatar(selectedGender);
+    local.parts.group.position.set(local.x, 0, local.z);
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
-    // --- PAD yerleştirme (Totem filtresi yok) ---
+    // PAD yerleştirme
     const PAD_KEYWORDS = ["totem","spawn","pad","platform","agora","hub","dock","deck"];
     let padCount = 0;
 
@@ -451,63 +507,60 @@
         addHotspotDisk(name, h.x, h.z, r);
         padCount++;
       }
-      // hotspot tetik/puan mantığı için veriyi her durumda yaz
       hotspotInfo.set(name, { pos: new THREE.Vector3(h.x, 0, h.z), r });
     });
 
-    // Sahne pad göndermediyse: oyuncunun spawn noktasına bir tane bırak
     if (padCount === 0) {
       const p = local.parts.group.position;
       addHotspotDisk("AgoraPad", p.x, p.z, 12);
     }
 
-    // --- gezegenler & oyuncular ---
     (planets || []).forEach(addPlanet);
-    (players || []).forEach(p => { 
-      const R = ensureRemote(p); 
-      updateNameTag(R, p.name || R.name); 
+    (players || []).forEach(p => {
+      const R = ensureRemote(p);
+      updateNameTag(R, p.name || R.name);
     });
   });
 
-  socket.on("player-joined", (p) => { 
-    if (p.id !== local.id){ 
-      const R = ensureRemote(p); 
-      updateNameTag(R, p.name || R.name); 
+  socket.on("player-joined", (p) => {
+    if (p.id !== local.id){
+      const R = ensureRemote(p);
+      updateNameTag(R, p.name || R.name);
     }
   });
 
-  socket.on("player-left", (id) => { 
-    const R = remotes.get(id); 
-    if (R){ scene.remove(R.parts.group); remotes.delete(id); } 
+  socket.on("player-left", (id) => {
+    const R = remotes.get(id);
+    if (R){ scene.remove(R.parts.group); remotes.delete(id); }
   });
 
   socket.on("player:name", ({id,name}) => {
-    if (id === local.id){ 
-      local.name = name; 
-      updateNameTag(local, name); 
+    if (id === local.id){
+      local.name = name;
+      updateNameTag(local, name);
     }
-    const R = remotes.get(id); 
+    const R = remotes.get(id);
     if (R) updateNameTag(R, name);
   });
 
   socket.on("chat:msg", ({ from, text }) => {
     const p = document.createElement("p");
     p.innerHTML = `<b>[${from.rank}] ${from.name}:</b> ${text}`;
-    chatLog.appendChild(p); 
+    chatLog.appendChild(p);
     chatLog.scrollTop = chatLog.scrollHeight;
   });
 
   socket.on("points:update", ({ total, delta, reason }) => {
-    local.points = total; 
+    local.points = total;
     pointsEl.textContent = `Points: ${local.points}`;
     showToast(`${delta>0?'+':''}${delta}  ${reason}`);
   });
 
-  socket.on("quest:update", ({code, progress, goal}) => 
+  socket.on("quest:update", ({code, progress, goal}) =>
     showToast(`Görev: ${code} ${progress}/${goal}`)
   );
 
-  // ==== Emote animasyonları (farklı hareketler) ====
+  // ==== Emote animasyonları ====
   const emoteTokens = new Map();
   function resetPose(parts){
     parts.armL.rotation.set(0,0,-Math.PI/8);
@@ -556,9 +609,7 @@
       parts.group.position.y = 0.10*Math.max(0, k);
     }
 
-    const fn = {
-      wave, dance, sit, clap, point, cheer
-    }[type] || dance;
+    const fn = { wave, dance, sit, clap, point, cheer }[type] || dance;
 
     (function anim(){
       if (emoteTokens.get(id) !== token) { parts.torso.material.color.copy(baseColor); resetPose(parts); return; }
@@ -574,7 +625,6 @@
   socket.on("emote", ({ id, type, until }) => {
     const target = (id===local.id) ? { parts: local.parts } : remotes.get(id);
     if (!target) return;
-    // chat bildirimi
     const p = document.createElement("p");
     p.innerHTML = `<i style="opacity:.8">[emote] ${getDisplayName(id)}: /${type}</i>`;
     chatLog.appendChild(p); chatLog.scrollTop = chatLog.scrollHeight;
@@ -588,7 +638,21 @@
       const R = ensureRemote(p);
       R.parts.group.position.lerp(new THREE.Vector3(p.x,0,p.z), 0.2);
       if (typeof p.ry === "number") R.parts.group.rotation.y = THREE.MathUtils.lerp(R.parts.group.rotation.y, p.ry, 0.2);
+      // isim/gender değişmişse güncelle
       if (R.name !== p.name && p.name) updateNameTag(R, p.name);
+      if (p.gender && p.gender !== R.gender){
+        // remote gender değişmişse yeniden kur
+        const pos = R.parts.group.position.clone();
+        scene.remove(R.parts.group); disposeGroup(R.parts.group);
+        const isFemale = (p.gender==='female');
+        const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
+        const accent  = isFemale ? 0xff3a66 : 0xffffff;
+        const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
+        parts.group.position.copy(pos);
+        parts.group.add(R.tag);
+        scene.add(parts.group);
+        R.parts = parts; R.gender = p.gender;
+      }
     });
   });
 
@@ -608,13 +672,17 @@
   function tick(now){
     const dt = Math.min(0.05, (now-last)/1000); last = now;
 
-    // Yön — FARE NEREYE BAKIYORSA W O YÖNE
+    // Yön — fare nereye bakıyorsa W o yöne
     const kForward = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0);
-    const kStrafeKB  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0); // D=+1 (sağ), A=-1 (sol)
-    const kStrafe = kStrafeKB + joyVec.x;
-
-    let forward = kForward + joyVec.y;
+    const kStrafeKB  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0);
+    const kStrafe = kStrafeKB + (isTouch ? 0 : 0) + (isTouch ? 0 : 0); // klavye + isteğe joystick eklemeleri aşağıda
+    let forward = kForward + (isTouch ? 0 : 0);
     let strafe  = kStrafe;
+
+    // Mobil joystick katkısı
+    forward += (joyVec.y||0);
+    strafe  += (joyVec.x||0);
+
     forward = Math.max(-1, Math.min(1, forward));
     strafe  = Math.max(-1, Math.min(1, strafe));
 
@@ -622,9 +690,6 @@
     const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (mag>1 ? 1/mag : 1);
 
     if (forward || strafe) {
-      // STRAFE işareti kullanıcı beklentisine göre düzeltildi:
-      // dx = f*sin  - s*cos
-      // dz = f*cos  + s*sin
       const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
       const dx = forward * sin - strafe * cos;
       const dz = forward * cos + strafe * sin;
@@ -641,7 +706,7 @@
     camera.position.lerp(new THREE.Vector3(camX, 2.0, camZ), 0.15);
     camera.lookAt(local.parts.group.position.x, local.parts.group.position.y + 0.8, local.parts.group.position.z);
 
-    // Gezegenler (halo yok)
+    // Gezegenler
     for (const p of planetMeshes) p.mesh.rotation.y -= 0.0012;
 
     // Ağ
@@ -668,4 +733,5 @@
   function sendChat(){ const t = chatText.value.trim(); if (!t) return; socket.emit("chat:send", { text:t }); chatText.value=""; }
   chatSend.addEventListener("click", sendChat);
   chatText.addEventListener("keydown", (e)=>{ if (e.key === "Enter") sendChat(); });
+
 })();
