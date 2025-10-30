@@ -166,152 +166,85 @@
   // === SpaceBase Disc + LED Ring (hotspot pad) ================================
   const _spaceBaseHotspotMeshes = new Map();
 
-// === SpaceBase Disc (robust) ===============================================
-function _createSpaceBaseDiscMesh(radius, opts = {}) {
-  const p = {
-    baseColor: 0x182335,
-    ringColor: 0x66ccff,
-    ringInner: 0.86,  // LED iç oran
-    ringOuter: 1.02,  // LED dış oran
-    fillGap:   0.002, // LED ile disk arasında ince boşluk
-    tiles: 2.9, groove: 0.03, bevel: 0.015,
-    stripeDensity: 7.0, emissiveK: 1.35,
-    ...opts
-  };
+  // === SpaceBase Disc (cylinder base + solid top + LED ring) ==================
+  function _createSpaceBaseDiscMesh(radius, opts = {}) {
+    const p = {
+      baseColor: 0x1b2432,       // platform gövde rengi
+      topColor:  0x223249,       // üst kapak (bir ton açık)
+      ringColor: 0x66ccff,       // LED renk
+      ringInner: 0.86,
+      ringOuter: 1.02,
+      height:    0.12,           // platform kalınlığı
+      gap:       0.004,          // top cap ile LED arasında çok ince boşluk
+      ...opts
+    };
 
-  const group = new THREE.Group();
+    const group = new THREE.Group();
+    group.name = "SpaceBasePad";
 
-  // --- 1) GARANTİ TABAN (görünür) ------------------------------------------
-  const fillR = radius * (p.ringInner - p.fillGap);
-  const base = new THREE.Mesh(
-    new THREE.CircleGeometry(fillR, 128),
-    new THREE.MeshStandardMaterial({
-      color: p.baseColor,
-      roughness: 0.88,
-      metalness: 0.18,
-      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: 2
-    })
-  );
-  base.rotation.x = -Math.PI/2;
-  base.position.y = 0.06;           // zeminden belirgin yukarı
-  base.receiveShadow = true;
-  base.renderOrder = 2;
-  group.add(base);
+    // --- 1) GÖVDE: ince silindir (zeminden net ayrışır) ----------------------
+    const bodyR = radius * (p.ringInner - p.gap);
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(bodyR, bodyR, p.height, 96, 1, false),
+      new THREE.MeshStandardMaterial({
+        color: p.baseColor,
+        roughness: 0.85,
+        metalness: 0.18,
+        polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: 4
+      })
+    );
+    body.position.y = p.height * 0.5 + 0.02; // zeminden yukarıda
+    body.castShadow = false;
+    body.receiveShadow = true;
+    body.renderOrder = 2;
+    group.add(body);
 
-  // --- 2) OVERLAY (additive, şeffaf) ---------------------------------------
-  const overlay = new THREE.Mesh(
-    new THREE.CircleGeometry(fillR * 0.999, 128),
-    new THREE.ShaderMaterial({
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      uniforms: {
-        uTime: { value: 0 },
-        uTiles: { value: p.tiles },
-        uGroove: { value: p.groove },
-        uBevel: { value: p.bevel },
-        uStripeDensity: { value: p.stripeDensity },
-        uEmissiveK: { value: p.emissiveK },
-        uCaution: { value: new THREE.Color("#ffd166") }
-      },
-      vertexShader: `
-        varying vec3 vWPos;
-        void main(){
-          vec4 wp = modelMatrix * vec4(position,1.0);
-          vWPos = wp.xyz;
-          gl_Position = projectionMatrix * viewMatrix * wp;
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vWPos;
-        uniform float uTime, uTiles, uGroove, uBevel, uStripeDensity, uEmissiveK;
-        uniform vec3 uCaution;
+    // --- 2) ÜST KAPAK: ayrı mesh (kesin görünür) -----------------------------
+    const top = new THREE.Mesh(
+      new THREE.CircleGeometry(bodyR * 0.999, 128),
+      new THREE.MeshStandardMaterial({
+        color: p.topColor,
+        roughness: 0.78,
+        metalness: 0.22,
+        side: THREE.DoubleSide,
+        polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: 6
+      })
+    );
+    top.rotation.x = -Math.PI/2;
+    top.position.y = body.position.y + p.height * 0.5 + 0.002; // gövdenin tepesinin hemen üstünde
+    top.receiveShadow = true;
+    top.renderOrder = 3;
+    group.add(top);
 
-        float hash21(vec2 p){
-          p = fract(p*vec2(123.34,456.21));
-          p += dot(p, p+45.32);
-          return fract(p.x*p.y);
-        }
-        float grooveMask(vec2 p){
-          vec2 gv = fract(p) - 0.5;
-          vec2 dv = (0.5 - abs(gv));
-          float edge = min(dv.x, dv.y);
-          return 1.0 - smoothstep(uGroove-uBevel, uGroove+uBevel, edge);
-        }
-        float cautionStripes(vec2 p){
-          vec2 cell = floor(p);
-          vec2 gv = fract(p) - 0.5;
-          float rnd = hash21(cell);
-          if (rnd < 0.66) return 0.0;
-          float dens = uStripeDensity + floor(rnd*3.0);
-          float dir = (rnd>0.82)? 1.0 : -1.0;
-          float ramp = (abs(gv.x)>abs(gv.y)) ? gv.y : gv.x;
-          float s = fract(ramp*dens + (uTime*0.28)*dir);
-          float bar = step(0.5, s);
-          float edgeBand = smoothstep(0.12, 0.10, min(0.5-abs(gv.x), 0.5-abs(gv.y)));
-          return bar * edgeBand;
-        }
+    // --- 3) LED HALKA ---------------------------------------------------------
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius * p.ringInner, radius * p.ringOuter, 128),
+      new THREE.MeshBasicMaterial({
+        color: p.ringColor,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = top.position.y + 0.003;
+    ring.renderOrder = 4;
+    group.add(ring);
 
-        void main(){
-          vec2 p = vWPos.xz * uTiles;
+    // nefes efekti (LED)
+    group.onBeforeRender = () => {
+      const t = performance.now() * 0.001;
+      ring.material.opacity = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(t * 2.6));
+    };
 
-          float g = grooveMask(p);
-          float s = cautionStripes(p);
-          float pulse = 0.6 + 0.4 * sin(uTime*3.0 + (p.x+p.y));
+    // DEBUG: bir kere log at, gerçekten eklendi mi görelim
+    setTimeout(() => console.log("[SpaceBase] pad eklendi:", { bodyR, y: body.position.y }), 0);
 
-          // oluk: hafif koyu mavi katkı (additive'de nazik dursun)
-          vec3 grooves = vec3(0.08,0.12,0.18) * g;
+    return group;
+  }
 
-          // uyarı şeritleri: sarımsı neon
-          vec3 neon = uCaution * (s * uEmissiveK * pulse);
-
-          vec3 col = grooves + neon;
-          float alpha = clamp(0.15 + 0.85*(s+g)*0.5, 0.12, 0.8); // çok agresif olmasın
-          gl_FragColor = vec4(col, alpha);
-        }
-      `
-    })
-  );
-  overlay.rotation.x = -Math.PI/2;
-  overlay.position.y = 0.061;    // base'in hemen üstü
-  overlay.renderOrder = 3;
-  group.add(overlay);
-
-  // anim
-  group.onBeforeRender = () => {
-    overlay.material.uniforms.uTime.value = performance.now() * 0.001;
-  };
-
-  // --- 3) LED RING ----------------------------------------------------------
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(radius * p.ringInner, radius * p.ringOuter, 128),
-    new THREE.MeshBasicMaterial({
-      color: p.ringColor,
-      transparent: true,
-      opacity: 0.55,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    })
-  );
-  ring.rotation.x = -Math.PI/2;
-  ring.position.y = 0.065;
-  ring.renderOrder = 4;
-  group.add(ring);
-
-  // nefes efekti
-  group.onBeforeRender = () => {
-    const t = performance.now() * 0.001;
-    overlay.material.uniforms.uTime.value = t;
-    ring.material.opacity = 0.35 + 0.35*(0.5+0.5*Math.sin(t*2.6));
-  };
-
-  return group;
-}
-
-  // PATCH: base diski kesin görünür yap
-  base.material.depthTest = false; base.renderOrder = 999;
 
 
   function addHotspotDisk(name, x, z, r){
