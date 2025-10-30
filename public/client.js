@@ -13,6 +13,7 @@
   const joy = document.getElementById("joystick");
   const stick = document.getElementById("stick");
   const lookpad = document.getElementById("lookpad");
+  
 
   // === Gender seçim binding (HTML tarafında <input name="gender" ...> var) ===
   const genderRadios = document.querySelectorAll('input[name="gender"]');
@@ -22,6 +23,15 @@
   }));
 
   const socket = io();
+
+  function updateHUDGender(g){
+  if(!hudGender) return;
+  const isMale = (g === 'male');
+  hudGender.textContent = isMale ? '♂ Erkek' : '♀ Kadın';
+  hudGender.classList.toggle('-male', isMale);
+  hudGender.classList.toggle('-female', !isMale);
+}
+
 
   // Device: joystick sadece mobilde
   const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
