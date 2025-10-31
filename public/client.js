@@ -479,20 +479,20 @@
     );
   }
 
-  // --- GLB Loader (güvenli kurulum) ---
-  let gltfLoader = null;
-  let baseCharGLB = null;
-
+  // --- GLB Loader (tekil instance, güvenli kurulum) ---
   try {
-    if (THREE && THREE.GLTFLoader) {
-      gltfLoader = new THREE.GLTFLoader();
-      if (THREE.DRACOLoader) {
-        const draco = new THREE.DRACOLoader();
-        draco.setDecoderPath('https://unpkg.com/three@0.152.2/examples/js/libs/draco/');
-        gltfLoader.setDRACOLoader(draco);
+    if (!gltfLoader) {
+      if (THREE && THREE.GLTFLoader) {
+        gltfLoader = new THREE.GLTFLoader();
+
+        if (THREE.DRACOLoader && !dracoLoader) {
+          dracoLoader = new THREE.DRACOLoader();
+          dracoLoader.setDecoderPath('https://unpkg.com/three@0.152.2/examples/js/libs/draco/');
+          gltfLoader.setDRACOLoader(dracoLoader);
+        }
+      } else {
+        console.warn('[Agora] GLTFLoader scripti yüklenmemiş; GLB pasif.');
       }
-    } else {
-      console.warn('[Agora] GLTFLoader bulunamadı; GLB desteği pasif.');
     }
   } catch (err) {
     console.warn('[Agora] GLB loader kurulamadı, devam ediyorum:', err);
@@ -501,15 +501,21 @@
 
   // Araba
   if (gltfLoader) {
-    gltfLoader.load('/models/cyberpunk_car.glb', (g) => {
-      const car = g.scene;
-      car.scale.set(0.9,0.9,0.9);
-      car.position.set(6,0,12);
-      car.rotation.y = Math.PI/4;
-      car.traverse(o => { if (o.isMesh){ o.castShadow = o.receiveShadow = true; }});
-      scene.add(car);
-    }, undefined, (e)=>console.warn('Araba GLB yüklenemedi:', e));
+    gltfLoader.load(
+      '/models/cyberpunk_car.glb',
+      (g) => {
+        const car = g.scene;
+        car.scale.set(0.9, 0.9, 0.9);
+        car.position.set(6, 0, 12);
+        car.rotation.y = Math.PI / 4;
+        car.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
+        scene.add(car);
+      },
+      undefined,
+      (e) => console.warn('Araba GLB yüklenemedi:', e)
+    );
   }
+
 
 
 
