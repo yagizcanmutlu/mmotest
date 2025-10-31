@@ -156,27 +156,33 @@
   // --- GLB Loader (r152, non-module güvenli kurulum) ---
 
 
+  // (Burada yeni bir 'let/var gltfLoader' YOK; üstteki mevcut değişkeni kullanıyoruz)
+
   try {
-    // Hem THREE.GLTFLoader hem de global GLTFLoader'ı dene
-    const GLTFLoaderClass = (window.THREE && window.THREE.GLTFLoader) || window.GLTFLoader;
+    // Bazı CDN'lerde GLTFLoader global gelir; ikisini de dene
+    const GLTFLoaderClass =
+      (window.THREE && window.THREE.GLTFLoader) || window.GLTFLoader;
+
     if (typeof GLTFLoaderClass === 'function') {
       gltfLoader = new GLTFLoaderClass();
 
-      // Draco varsa bağla (js sürümü yolu!)
-      const DracoClass = (window.THREE && window.THREE.DRACOLoader) || window.DRACOLoader;
+      // Draco varsa bağla (examples/js yolu)
+      const DracoClass =
+        (window.THREE && window.THREE.DRACOLoader) || window.DRACOLoader;
       if (typeof DracoClass === 'function') {
         const draco = new DracoClass();
-        // 'examples/js/' yolu: (jsm kullanmıyoruz)
-        draco.setDecoderPath('https://unpkg.com/three@0.152.2/examples/js/libs/draco/');
+        draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/libs/draco/');
         gltfLoader.setDRACOLoader(draco);
       }
     } else {
       console.warn('[Agora] GLTFLoader yok; GLB pasif.');
+      gltfLoader = null;
     }
   } catch (e) {
-    console.warn('[Agora] GLTFLoader bulunamadı:', e);
+    console.warn('[Agora] GLTFLoader kurulamadı:', e);
     gltfLoader = null;
   }
+
 
   if (gltfLoader) {
   gltfLoader.load('/models/cyberpunk_car.glb', (g) => {
