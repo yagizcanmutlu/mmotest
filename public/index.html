@@ -100,15 +100,14 @@
   </style>
 
 
-<!-- HEAD içinde, sıralama ÖNEMLİ (defer ile sıra korunur) -->
+<!-- HEAD içinde: -->
+<!-- three + loaders (UMD) -->
 <script defer src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/DRACOLoader.js"></script>
-<script defer src="/socket.io/socket.io.js"></script>
+<script type="module" src="/loaders.module.js"></script>
 <script defer src="/client.js"></script>
-
-
-
+<script defer src="/vendor/three/examples/js/loaders/GLTFLoader.js"></script>
+<script defer src="/vendor/three/examples/js/loaders/DRACOLoader.js"></script>
+<script defer src="/socket.io/socket.io.js"></script>
 
 </head>
 <body>
