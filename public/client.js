@@ -14,6 +14,10 @@
   const stick = document.getElementById("stick");
   const lookpad = document.getElementById("lookpad");
   
+    // --- GLB globals (hoisted) ---
+  var gltfLoader = null;   // hoisted olsun
+  var baseCharGLB = null;  // preload edilen karakter
+
 
   // === Gender seçim binding (HTML tarafında <input name="gender" ...> var) ===
   const genderRadios = document.querySelectorAll('input[name="gender"]');
@@ -100,6 +104,24 @@
   }
   function showToast(text){ toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
 
+    // --- GLTF/DRACO loader kurulumu (güvenli) ---
+  try {
+    if (THREE && THREE.GLTFLoader) {
+      gltfLoader = new THREE.GLTFLoader();
+      if (THREE.DRACOLoader) {
+        const draco = new THREE.DRACOLoader();
+        draco.setDecoderPath('https://unpkg.com/three@0.152.2/examples/js/libs/draco/');
+        gltfLoader.setDRACOLoader(draco);
+      }
+    } else {
+      console.warn('[Agora] GLTFLoader yok; GLB devre dışı.');
+    }
+  } catch (err) {
+    console.warn('[Agora] GLB loader kurulamadı:', err);
+    gltfLoader = null;
+  }
+
+
     // --- GLB tabanlı player oluşturucu ---
   function buildPlayerFromGLB(name = "Player"){
     const holder = new THREE.Group();
@@ -123,11 +145,11 @@
     return { group: holder, tag, isGLB: true, torso: {material:{color:new THREE.Color(0xffffff)}} };
   }
 
-    // --- Karakter GLB preload: /public/models/readyplayermale_cyberpunk.glb ---
-  if (gltfLoader) {
+  // Karakter preload (opsiyonel)
+  if (gltfLoader && !baseCharGLB) {
     gltfLoader.load('/models/readyplayermale_cyberpunk.glb', (gltf)=>{
       baseCharGLB = gltf.scene;
-      swapLocalToGLB(); // local avatarı hazırsa çevir
+      // baseCharGLB hazırsa burada swapLocalToGLB() çağırabilirsin
     }, undefined, (e)=>console.error('Karakter GLB yüklenemedi:', e));
   }
 
@@ -477,14 +499,14 @@
     gltfLoader = null;
   }
 
-  // --- Cyberpunk araba ---
+  // Araba
   if (gltfLoader) {
     gltfLoader.load('/models/cyberpunk_car.glb', (g) => {
       const car = g.scene;
-      car.scale.set(0.9, 0.9, 0.9);
-      car.position.set(6, 0, 12);
-      car.rotation.y = Math.PI / 4;
-      car.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; }});
+      car.scale.set(0.9,0.9,0.9);
+      car.position.set(6,0,12);
+      car.rotation.y = Math.PI/4;
+      car.traverse(o => { if (o.isMesh){ o.castShadow = o.receiveShadow = true; }});
       scene.add(car);
     }, undefined, (e)=>console.warn('Araba GLB yüklenemedi:', e));
   }
