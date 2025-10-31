@@ -100,14 +100,16 @@
   </style>
 
 
-  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="https://unpkg.com/three@0.152.2/examples/js/loaders/DRACOLoader.js"></script>
+<!-- HEAD içinde: -->
+<script defer src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+<script defer src="https://unpkg.com/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
+<script defer src="https://unpkg.com/three@0.152.2/examples/js/loaders/DRACOLoader.js"></script>
+<script defer src="/socket.io/socket.io.js"></script>
+<script defer src="client.js"></script>
 
 
 
 
-  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
   <div id="root">
@@ -171,6 +173,8 @@
       helpBox.style.display = helpBox.style.display === "block" ? "none" : "block";
     });
   </script>
-  <script src="client.js"></script>
+
+  <!--<script src="client.js"></script>-->
+
 </body>
 </html>

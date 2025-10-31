@@ -153,6 +153,41 @@
     }, undefined, (e)=>console.error('Karakter GLB yüklenemedi:', e));
   }
 
+  // --- GLB Loader (r152, non-module) ---
+  let gltfLoader = null;
+  try {
+    gltfLoader = new THREE.GLTFLoader();
+    const draco = new THREE.DRACOLoader();
+    draco.setDecoderPath('https://unpkg.com/three@0.152.2/examples/js/libs/draco/');
+    gltfLoader.setDRACOLoader(draco);
+  } catch (e) {
+    console.warn('[Agora] GLTFLoader bulunamadı:', e);
+    gltfLoader = null;
+  }
+
+  // --- Modeller ---
+  if (gltfLoader) {
+    // Araba
+    gltfLoader.load('/models/cyberpunk_car.glb', (g) => {
+      const car = g.scene;
+      car.scale.set(0.9, 0.9, 0.9);
+      car.position.set(6, 0, 12);
+      car.rotation.y = Math.PI / 4;
+      car.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; }});
+      scene.add(car);
+    }, undefined, err => console.warn('Car GLB yüklenemedi:', err));
+
+    // Ready Player Male – cyberpunk
+    gltfLoader.load('/models/readyplayermale_cyberpunk.glb', (g) => {
+      const dude = g.scene;
+      dude.scale.set(1, 1, 1);
+      dude.position.set(-4, 0, 8);
+      dude.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; }});
+      scene.add(dude);
+    }, undefined, err => console.warn('Character GLB yüklenemedi:', err));
+  }
+
+
 
   function swapLocalToGLB(){
     if (!baseCharGLB) return;
@@ -336,6 +371,7 @@
       shader.uniforms.uEmissiveK = { value: params.emissiveK };
       shader.uniforms.uCaution = { value: params.caution };
 
+      // shader.vertexShader patch'i (yalnızca ilgili kısmı gösteriyorum)
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `
           #include <common>
@@ -343,7 +379,12 @@
         `)
         .replace('#include <worldpos_vertex>', `
           #include <worldpos_vertex>
-          vWPos = worldPosition.xyz;
+          // Bazı GPU/driver'larda worldPosition kapsam sorunu çıkmasın diye
+          vec4 wp4 = modelMatrix * vec4( transformed, 1.0 );
+          #ifdef USE_INSTANCING
+            wp4 = instanceMatrix * wp4;
+          #endif
+          vWPos = wp4.xyz;
         `);
 
       shader.fragmentShader = shader.fragmentShader
@@ -478,44 +519,6 @@
       { pos: new THREE.Vector3(p.x, 0, p.z), r: (p.r ? p.r * (p.scale || PLANET_SIZE_MUL) : (R + 10)) }
     );
   }
-
-  // --- GLB Loader (tekil instance, güvenli kurulum) ---
-  try {
-    if (!gltfLoader) {
-      if (THREE && THREE.GLTFLoader) {
-        gltfLoader = new THREE.GLTFLoader();
-
-        if (THREE.DRACOLoader && !dracoLoader) {
-          dracoLoader = new THREE.DRACOLoader();
-          dracoLoader.setDecoderPath('https://unpkg.com/three@0.152.2/examples/js/libs/draco/');
-          gltfLoader.setDRACOLoader(dracoLoader);
-        }
-      } else {
-        console.warn('[Agora] GLTFLoader scripti yüklenmemiş; GLB pasif.');
-      }
-    }
-  } catch (err) {
-    console.warn('[Agora] GLB loader kurulamadı, devam ediyorum:', err);
-    gltfLoader = null;
-  }
-
-  // Araba
-  if (gltfLoader) {
-    gltfLoader.load(
-      '/models/cyberpunk_car.glb',
-      (g) => {
-        const car = g.scene;
-        car.scale.set(0.9, 0.9, 0.9);
-        car.position.set(6, 0, 12);
-        car.rotation.y = Math.PI / 4;
-        car.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
-        scene.add(car);
-      },
-      undefined,
-      (e) => console.warn('Araba GLB yüklenemedi:', e)
-    );
-  }
-
 
 
 
