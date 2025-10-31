@@ -154,7 +154,7 @@
   }
 
   // --- GLB Loader (r152, non-module güvenli kurulum) ---
-  let gltfLoader = null;
+
 
   try {
     // Hem THREE.GLTFLoader hem de global GLTFLoader'ı dene
