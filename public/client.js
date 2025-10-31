@@ -1,4 +1,4 @@
-// client.js (EN ÜSTE EKLE)
+// client.js (BAŞI)
 import * as THREE from '/vendor/three/build/three.module.js';
 import { GLTFLoader }  from '/vendor/three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
