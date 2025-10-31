@@ -6,42 +6,41 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 /* global THREE, io */
 (() => {
   // UI
-  const root = document.getElementById("root");
-  const cta = document.getElementById("cta");
-  const playBtn = document.getElementById("playBtn");
-  const nameInput = document.getElementById("nameInput");
+  const root     = document.getElementById("root");
+  const cta      = document.getElementById("cta");
+  const playBtn  = document.getElementById("playBtn");
+  const nameInput= document.getElementById("nameInput");
   const pointsEl = document.getElementById("points");
-  const chatLog = document.getElementById("chatLog");
+  const chatLog  = document.getElementById("chatLog");
   const chatText = document.getElementById("chatText");
   const chatSend = document.getElementById("chatSend");
-  const toast = document.getElementById("toast");
-  const joy = document.getElementById("joystick");
-  const stick = document.getElementById("stick");
-  const lookpad = document.getElementById("lookpad");
-  
-  
-    // --- GLB globals (hoisted) ---
-  var gltfLoader = null;   // hoisted olsun
+  const toast    = document.getElementById("toast");
+  const joy      = document.getElementById("joystick");
+  const stick    = document.getElementById("stick");
+  const lookpad  = document.getElementById("lookpad");
+  const hudGender= document.getElementById("hudGender"); // eğer yoksa sorun çıkarmaz
+
+  // --- GLB globals (hoisted) ---
+  var gltfLoader = null;   // tek loader (module)
   var baseCharGLB = null;  // preload edilen karakter
 
-
-  // === Gender seçim binding (HTML tarafında <input name="gender" ...> var) ===
+  // === Gender seçim binding ===
   const genderRadios = document.querySelectorAll('input[name="gender"]');
   let selectedGender = 'female';
   genderRadios.forEach(r => r.addEventListener('change', e => {
     selectedGender = e.target.value; // 'female' | 'male'
+    updateHUDGender(selectedGender);
   }));
 
   const socket = io();
 
   function updateHUDGender(g){
-  if(!hudGender) return;
-  const isMale = (g === 'male');
-  hudGender.textContent = isMale ? '♂ Erkek' : '♀ Kadın';
-  hudGender.classList.toggle('-male', isMale);
-  hudGender.classList.toggle('-female', !isMale);
-}
-
+    if(!hudGender) return;
+    const isMale = (g === 'male');
+    hudGender.textContent = isMale ? '♂ Erkek' : '♀ Kadın';
+    hudGender.classList.toggle('-male', isMale);
+    hudGender.classList.toggle('-female', !isMale);
+  }
 
   // Device: joystick sadece mobilde
   const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
@@ -51,6 +50,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(root.clientWidth, root.clientHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
   root.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -62,6 +63,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const hemi = new THREE.HemisphereLight(0x87a8ff, 0x070712, 1.0);
   const dir  = new THREE.DirectionalLight(0x8fd0ff, 0.6);
   dir.position.set(6,10,4);
+  dir.castShadow = true;
   scene.add(hemi, dir);
 
   const ground = new THREE.Mesh(
@@ -108,24 +110,55 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     sp.position.set(0, 2.15, 0);
     return sp;
   }
-  function showToast(text){ toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
+  function showToast(text){ if(!toast) return; toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
 
-    // --- GLTF/DRACO loader kurulumu (güvenli) ---
+  // --- GLTF/DRACO loader (SADE: module-only) ---
   try {
-    // --- GLB Loader (module) ---
-    const gltfLoader = new GLTFLoader();
+    gltfLoader = new GLTFLoader();
     const draco = new DRACOLoader();
     draco.setDecoderPath('/vendor/three/examples/jsm/libs/draco/'); // sondaki / önemli
     gltfLoader.setDRACOLoader(draco);
-
   } catch (e) {
-    console.warn('[Agora] GLTFLoader bulunamadı; GLB pasif:', e);
+    console.warn('[Agora] GLTFLoader init başarısız. GLB kapalı:', e);
     gltfLoader = null;
   }
 
+  // Karakter preload (opsiyonel)
+  if (gltfLoader && !baseCharGLB) {
+    gltfLoader.load('/models/readyplayermale_cyberpunk.glb', (gltf)=>{
+      baseCharGLB = gltf.scene;
+    }, undefined, (e)=>console.error('Karakter GLB preload hatası:', e));
+  }
 
-    // --- GLB tabanlı player oluşturucu ---
+  // --- SAHNEYE OBJELER: Araba + Karakter (test için) ---
+  if (gltfLoader) {
+    // Araba
+    gltfLoader.load('/models/cyberpunk_car.glb', (g) => {
+      const car = g.scene;
+      car.scale.setScalar(0.9);
+      car.position.set(6, 0, 12);
+      car.rotation.y = Math.PI / 4;
+      car.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; }});
+      scene.add(car);
+    }, undefined, (err)=>console.warn('Araba GLB yüklenemedi:', err));
+
+    // Karakter
+    gltfLoader.load('/models/readyplayermale_cyberpunk.glb', (g) => {
+      const dude = g.scene;
+      // Yükseklik normalize (~1.8m)
+      const box = new THREE.Box3().setFromObject(dude);
+      const h = Math.max(0.0001, box.max.y - box.min.y);
+      const s = 1.8 / h;
+      dude.scale.setScalar(s);
+      dude.position.set(-4, 0, 8);
+      dude.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; }});
+      scene.add(dude);
+    }, undefined, (err)=>console.warn('Karakter GLB yüklenemedi:', err));
+  }
+
+  // --- GLB tabanlı player oluşturucu ---
   function buildPlayerFromGLB(name = "Player"){
+    if (!baseCharGLB) return { group:new THREE.Group(), tag:null, isGLB:true, torso:{material:{color:new THREE.Color(0xffffff)}} };
     const holder = new THREE.Group();
     const clone = baseCharGLB.clone(true);
 
@@ -143,74 +176,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     holder.add(clone);
     const tag = makeNameSprite(name);
     holder.add(tag);
-    // local kodla uyum için aynı alan adları
     return { group: holder, tag, isGLB: true, torso: {material:{color:new THREE.Color(0xffffff)}} };
   }
-
-  // Karakter preload (opsiyonel)
-  if (gltfLoader && !baseCharGLB) {
-    gltfLoader.load('/models/readyplayermale_cyberpunk.glb', (gltf)=>{
-      baseCharGLB = gltf.scene;
-      // baseCharGLB hazırsa burada swapLocalToGLB() çağırabilirsin
-    }, undefined, (e)=>console.error('Karakter GLB yüklenemedi:', e));
-  }
-
-  // --- GLB Loader (r152, non-module) ---
-// --- GLB Loader (r152, non-module) ---
-  // Üste bir yere: var gltfLoader = null;
-
-  async function waitForLoaders(timeoutMs = 4000) {
-    const t0 = performance.now();
-    while (!(window.GLTFLoader && window.DRACOLoader)) {
-      await new Promise(r => setTimeout(r, 25));
-      if (performance.now() - t0 > timeoutMs) return false;
-    }
-    return true;
-  }
-
-  (async () => {
-    const ok = await waitForLoaders();
-    if (!ok) {
-      console.warn('[Agora] GLTFLoader yok; GLB devre dışı.');
-      return;
-    }
-    try {
-      const gltf  = new window.GLTFLoader();
-      const draco = new window.DRACOLoader();
-      // DİKKAT: sonda SLASH var!
-      draco.setDecoderPath('/vendor/three/examples/jsm/libs/draco/');
-      gltf.setDRACOLoader(draco);
-      gltfLoader = gltf;
-      console.log('[Agora] GLTF + DRACO hazır');
-    } catch (e) {
-      console.warn('[Agora] GLTFLoader bulunamadı; GLB pasif.', e);
-      gltfLoader = null;
-    }
-
-    // --- Modeller ---
-    if (!gltfLoader) return;
-
-    // Araba
-    gltfLoader.load('/models/cyberpunk_car.glb', (g) => {
-      const car = g.scene;
-      car.scale.set(0.9, 0.9, 0.9);
-      car.position.set(6, 0, 12);
-      car.rotation.y = Math.PI / 4;
-      car.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; }});
-      scene.add(car);
-    }, undefined, (err)=>console.warn('Araba GLB yüklenemedi:', err));
-
-    // Karakter
-    gltfLoader.load('/models/readyplayermale_cyberpunk.glb', (g) => {
-      const dude = g.scene;
-      dude.scale.set(1, 1, 1);
-      dude.position.set(-4, 0, 8);
-      dude.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; }});
-      scene.add(dude);
-    }, undefined, (err)=>console.warn('Karakter GLB yüklenemedi:', err));
-  })();
-
-
 
   function swapLocalToGLB(){
     if (!baseCharGLB) return;
@@ -229,7 +196,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     if (local.name) updateNameTag(local, local.name);
   }
 
-
   // Basit dispose
   function disposeGroup(g){
     if (!g) return;
@@ -242,7 +208,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     });
   }
 
-  // Stylized Character (parça referanslarıyla) — basit iki varyant
+  // Stylized Character (parça referanslarıyla)
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff, opts={}){
     const scale = opts.scale ?? 0.20;
     const legH = opts.legH ?? 0.5;
@@ -323,7 +289,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return R;
   }
 
-
   function updateNameTag(holder, name){
     if (holder.tag) {
       holder.parts.group.remove(holder.tag);
@@ -339,7 +304,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     const R = remotes.get(id); return (R && R.name) || `Yogi-${String(id).slice(0,4)}`;
   }
 
-  // === Avatar swap (gender değişince/bootstraptan sonra) ===
+  // === Avatar swap ===
   function swapLocalAvatar(gender='female'){
     local.gender = gender;
     const prev = local.parts;
@@ -394,7 +359,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       shader.uniforms.uEmissiveK = { value: params.emissiveK };
       shader.uniforms.uCaution = { value: params.caution };
 
-      // shader.vertexShader patch'i (yalnızca ilgili kısmı gösteriyorum)
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `
           #include <common>
@@ -402,7 +366,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         `)
         .replace('#include <worldpos_vertex>', `
           #include <worldpos_vertex>
-          // Bazı GPU/driver'larda worldPosition kapsam sorunu çıkmasın diye
           vec4 wp4 = modelMatrix * vec4( transformed, 1.0 );
           #ifdef USE_INSTANCING
             wp4 = instanceMatrix * wp4;
@@ -465,7 +428,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     disc.position.y = 0.01;
     disc.receiveShadow = true;
 
-    // LED ring
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(radius*0.94, radius*1.02, 128),
       new THREE.MeshBasicMaterial({
@@ -543,15 +505,13 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     );
   }
 
-
-
   // Input
   const keys = new Set();
   let chatFocus = false;
 
   window.addEventListener("keydown", (e)=>{
     if (e.code === "Enter") {
-      chatFocus = !chatFocus; if (chatFocus) chatText.focus(); else chatText.blur(); return;
+      chatFocus = !chatFocus; if (chatFocus) chatText?.focus(); else chatText?.blur(); return;
     }
     if (chatFocus) return;
     keys.add(e.code);
@@ -563,28 +523,28 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   window.addEventListener("keyup", (e)=> keys.delete(e.code));
 
   // Pointer-lock look (desktop)
-  playBtn.addEventListener("click", () => {
-    const desired = (nameInput.value||"").trim().slice(0,20);
+  if (playBtn) playBtn.addEventListener("click", () => {
+    const desired = (nameInput?.value||"").trim().slice(0,20);
     if (desired) { local.name = desired; if (local.tag) updateNameTag(local, desired); }
 
-    // HEMEN lokal avatarı cinsiyete göre değiştir
-    swapLocalAvatar(selectedGender);
-    swapLocalToGLB(); // GLB yüklüyse avatarı GLB'ye çevir
+    swapLocalAvatar(selectedGender);  // lokal avatarı cinsiyete göre değiştir
+    swapLocalToGLB();                 // GLB yüklüyse avatarı GLB'ye çevir
 
-
-    // Sunucuya profil + (bazı sunucular için) join
     socket.emit("profile:update", { name: desired || undefined, gender: selectedGender });
     socket.emit("join", { name: desired || undefined, gender: selectedGender });
 
-    cta.style.display = "none";
+    if (cta) cta.style.display = "none";
     renderer.domElement.requestPointerLock();
   });
+
   document.addEventListener("pointerlockchange", () => {
+    if (!cta) return;
     if (document.pointerLockElement !== renderer.domElement) cta.style.display = "flex";
   });
+
   window.addEventListener("mousemove", (e) => {
     if (document.pointerLockElement === renderer.domElement && !chatFocus) {
-      local.yaw -= e.movementX * 0.0025; // sağa hareket → sağa bakış
+      local.yaw -= e.movementX * 0.0025;
     }
   });
 
@@ -635,27 +595,23 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   // Sockets
   socket.on("bootstrap", ({ you, players, hotspots, planets }) => {
-    // Kimlik & puan
     local.id = you.id;
     local.name = you.name;
     local.points = you.points || 0;
-    pointsEl.textContent = `Points: ${local.points}`;
+    if (pointsEl) pointsEl.textContent = `Points: ${local.points}`;
 
-    // Position & yaw
     local.x = you.x; local.z = you.z; local.yaw = you.ry || 0;
 
-    // Gender server'dan gelmişse ona uy
     if (you.gender === 'female' || you.gender === 'male') {
       selectedGender = you.gender;
+      updateHUDGender(selectedGender);
     }
-    // Avatarı (seçili gender) ile kur
     swapLocalAvatar(selectedGender);
-    swapLocalToGLB(); // GLB hazırsa local avatarı GLB yap
+    swapLocalToGLB();
 
     local.parts.group.position.set(local.x, 0, local.z);
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
-    // PAD yerleştirme
     const PAD_KEYWORDS = ["totem","spawn","pad","platform","agora","hub","dock","deck"];
     let padCount = 0;
 
@@ -705,6 +661,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   });
 
   socket.on("chat:msg", ({ from, text }) => {
+    if (!chatLog) return;
     const p = document.createElement("p");
     p.innerHTML = `<b>[${from.rank}] ${from.name}:</b> ${text}`;
     chatLog.appendChild(p);
@@ -713,7 +670,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   socket.on("points:update", ({ total, delta, reason }) => {
     local.points = total;
-    pointsEl.textContent = `Points: ${local.points}`;
+    if (pointsEl) pointsEl.textContent = `Points: ${local.points}`;
     showToast(`${delta>0?'+':''}${delta}  ${reason}`);
   });
 
@@ -788,7 +745,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     if (!target) return;
     const p = document.createElement("p");
     p.innerHTML = `<i style="opacity:.8">[emote] ${getDisplayName(id)}: /${type}</i>`;
-    chatLog.appendChild(p); chatLog.scrollTop = chatLog.scrollHeight;
+    chatLog?.appendChild(p); chatLog && (chatLog.scrollTop = chatLog.scrollHeight);
 
     playEmote(target.parts, id, type, Math.max(700, Math.min(1600, (until ? (until - Date.now()) : 1200))));
   });
@@ -799,10 +756,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       const R = ensureRemote(p);
       R.parts.group.position.lerp(new THREE.Vector3(p.x,0,p.z), 0.2);
       if (typeof p.ry === "number") R.parts.group.rotation.y = THREE.MathUtils.lerp(R.parts.group.rotation.y, p.ry, 0.2);
-      // isim/gender değişmişse güncelle
       if (R.name !== p.name && p.name) updateNameTag(R, p.name);
       if (p.gender && p.gender !== R.gender){
-        // remote gender değişmişse yeniden kur
         const pos = R.parts.group.position.clone();
         scene.remove(R.parts.group); disposeGroup(R.parts.group);
         const isFemale = (p.gender==='female');
@@ -833,11 +788,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function tick(now){
     const dt = Math.min(0.05, (now-last)/1000); last = now;
 
-    // Yön — fare nereye bakıyorsa W o yöne
     const kForward = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0);
     const kStrafeKB  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0);
-    const kStrafe = kStrafeKB + (isTouch ? 0 : 0) + (isTouch ? 0 : 0); // klavye + isteğe joystick eklemeleri aşağıda
-    let forward = kForward + (isTouch ? 0 : 0);
+    const kStrafe = kStrafeKB;
+    let forward = kForward;
     let strafe  = kStrafe;
 
     // Mobil joystick katkısı
@@ -858,19 +812,15 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       local.parts.group.position.z += dz * spd * dt;
     }
 
-    // Yaw uygula
     local.parts.group.rotation.y = local.yaw;
 
-    // Kamera & zoom
     const camX = local.parts.group.position.x - Math.sin(local.yaw) * camDist;
     const camZ = local.parts.group.position.z - Math.cos(local.yaw) * camDist;
     camera.position.lerp(new THREE.Vector3(camX, 2.0, camZ), 0.15);
     camera.lookAt(local.parts.group.position.x, local.parts.group.position.y + 0.8, local.parts.group.position.z);
 
-    // Gezegenler
     for (const p of planetMeshes) p.mesh.rotation.y -= 0.0012;
 
-    // Ağ
     netAcc += dt;
     if (netAcc > 0.08 && local.id) {
       netAcc = 0;
@@ -891,8 +841,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   });
 
   // Chat
-  function sendChat(){ const t = chatText.value.trim(); if (!t) return; socket.emit("chat:send", { text:t }); chatText.value=""; }
-  chatSend.addEventListener("click", sendChat);
-  chatText.addEventListener("keydown", (e)=>{ if (e.key === "Enter") sendChat(); });
+  function sendChat(){ const t = chatText?.value.trim(); if (!t) return; socket.emit("chat:send", { text:t }); chatText.value=""; }
+  chatSend?.addEventListener("click", sendChat);
+  chatText?.addEventListener("keydown", (e)=>{ if (e.key === "Enter") sendChat(); });
 
 })();
