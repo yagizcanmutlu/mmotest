@@ -1,3 +1,8 @@
+// client.js (EN ÜSTE EKLE)
+import * as THREE from '/vendor/three/build/three.module.js';
+import { GLTFLoader }  from '/vendor/three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
+
 /* global THREE, io */
 (() => {
   // UI
@@ -13,6 +18,7 @@
   const joy = document.getElementById("joystick");
   const stick = document.getElementById("stick");
   const lookpad = document.getElementById("lookpad");
+  
   
     // --- GLB globals (hoisted) ---
   var gltfLoader = null;   // hoisted olsun
@@ -106,11 +112,12 @@
 
     // --- GLTF/DRACO loader kurulumu (güvenli) ---
   try {
-    const gltf  = new window.GLTFLoader();
-    const draco = new window.DRACOLoader();
-    draco.setDecoderPath('/vendor/three/examples/jsm/libs/draco/'); // sonda / önemli
-    gltf.setDRACOLoader(draco);
-    gltfLoader = gltf;
+    // --- GLB Loader (module) ---
+    const gltfLoader = new GLTFLoader();
+    const draco = new DRACOLoader();
+    draco.setDecoderPath('/vendor/three/examples/jsm/libs/draco/'); // sondaki / önemli
+    gltfLoader.setDRACOLoader(draco);
+
   } catch (e) {
     console.warn('[Agora] GLTFLoader bulunamadı; GLB pasif:', e);
     gltfLoader = null;
