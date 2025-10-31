@@ -154,7 +154,7 @@
   }
 
   // --- GLB Loader (r152, non-module) ---
-  let gltfLoader = null;
+
   try {
     gltfLoader = new THREE.GLTFLoader();
     const draco = new THREE.DRACOLoader();
