@@ -491,13 +491,20 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const planetMeshes = [];
   const moonTex = new THREE.TextureLoader().load("https://happy358.github.io/Images/textures/lunar_color.jpg", t=>{ t.colorSpace = THREE.SRGBColorSpace; });
   const PLANET_SIZE_MUL = 1.8;
+      // --- Ayarlar (PLANETLER) ---
+  const PLANET_DIST_MUL = 1.75;   // Uzaklık çarpanı (x,z'i ölçekler)
+  const PLANET_ALTITUDE = 8.0;    // Gezegenleri pad’den yukarı kaldırma (metre)
+
 
   function addPlanet(p){
     const R = (p.radius || 20) * (p.scale || PLANET_SIZE_MUL);
     const geo = new THREE.SphereGeometry(R, 48, 48);
     const mat = new THREE.MeshPhongMaterial({ color: p.color, map: moonTex, bumpMap: moonTex, bumpScale: 0.6 });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(p.x, R + 0.1, p.z);
+
+    // <<< SADECE GEZEGENİ YÜKSELT >>>
+    const altitude = (p.altitude != null) ? p.altitude : 0;
+    mesh.position.set(p.x, R + 0.1 + altitude, p.z);
     mesh.rotation.x = -Math.PI/10;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -509,11 +516,14 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     scene.add(mesh);
     planetMeshes.push({ name: p.name, mesh, label, R });
 
-    // ⬇ gezegen altına pad
+    // Pad yeryüzünde kalsın (y = 0). Sadece x,z ölçek uygulanmış halde oluşturuyoruz.
     addHotspotDisk(`Pad:${p.name}`, p.x, p.z, Math.max(12, Math.min(22, R*0.55)));
 
     hotspotInfo.set(`Planet:${p.name}`, { pos: new THREE.Vector3(p.x, 0, p.z), r: (p.r ? p.r * (p.scale || PLANET_SIZE_MUL) : (R + 10)) });
   }
+
+
+
 
   // Sockets
   let staticSpawned = false; // NPC’leri bir kez üret
@@ -547,10 +557,16 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       : new THREE.Vector3(local.parts.group.position.x, 0, local.parts.group.position.z);
     addHotspotDisk("AgoraPad", padPos.x, padPos.z, 18); // büyütülmüş ana pad
 
-    // Planets – biraz uzağa taşı ve altlarına pad koy
-    const scaleOut = 1.35;
-    (planets || []).forEach(p => addPlanet({ ...p, x: (p.x||0)*scaleOut, z: (p.z||0)*scaleOut, scale: PLANET_SIZE_MUL }));
+  // Eskisi:
+  // const scaleOut = 1.35;
+  // (planets || []).forEach(p => addPlanet({ ...p, x:(p.x||0)*scaleOut, z:(p.z||0)*scaleOut, scale: PLANET_SIZE_MUL }));
 
+  // Yenisi:
+  (planets || []).forEach(p => {
+    const x = (p.x || 0) * PLANET_DIST_MUL;
+    const z = (p.z || 0) * PLANET_DIST_MUL;
+    addPlanet({ ...p, x, z, scale: PLANET_SIZE_MUL, altitude: PLANET_ALTITUDE });
+  });
     // Remote players
     (players || []).forEach(p => {
       const R = ensureRemote(p);
