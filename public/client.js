@@ -26,64 +26,40 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
 
-    // === AGORA NFT entegrasyonu (index.html -> client.js) ===
-  const hudGenderEl = document.getElementById('hudGender');
-
-  function setHudGender(g) {
-    if (!hudGenderEl) return;
-    hudGenderEl.className = '';               // class reset
-    if ((g||'').toLowerCase().startsWith('m')) {
-      hudGenderEl.textContent = '♂ Erkek';
-      hudGenderEl.classList.add('-male');
-    } else {
-      hudGenderEl.textContent = '♀ Kadın';
-      hudGenderEl.classList.add('-female');
-    }
-  }
-
-  function startGameFromPayload({ playerName, gender='female', wallet=null, nft=null } = {}) {
-    // 1) Yerelde isim & cinsiyet
+  // === CİNSİYET KALDIRILDI — yalnızca isim, wallet ve NFT ile giriş ===
+  function startGameFromPayload({ playerName, wallet=null, nft=null } = {}) {
     const name = (playerName || '').trim() || 'Player';
-    local.gender = gender;
     if (name) updateNameTag(local, name);
 
-    // 2) HUD güncelle
-    setHudGender(gender);
-
-    // 3) Server’a profil ve join bilgisi gönder
+    // Server’a profil ve join bilgisi gönder
     // (Server tanımı destekliyorsa wallet/nft alanlarını kullanır; bilmiyorsa yok sayar.)
-    socket.emit("profile:update", { name, gender, wallet, nft });
-    socket.emit("join",           { name, gender, wallet, nft });
+    socket.emit("profile:update", { name, wallet, nft });
+    socket.emit("join",           { name, wallet, nft });
 
-    // 4) UI geçişleri
+    // UI geçişleri
     if (cta) cta.style.display = "none";
-    // pointer lock: masaüstünde konfor için burada alıyoruz
     try { renderer.domElement.requestPointerLock(); } catch(e){}
 
-    // 5) İleride ihtiyaç olursa seçilen NFT’yi yerelde tut
+    // Seçilen NFT’yi yerelde tut
     window.__AGORA_SELECTED_NFT__ = nft || null;
   }
 
   // index.html, play butonunda bu olayı dispatch ediyor
   window.addEventListener('agoraInit', (e) => {
     const payload = e?.detail || {};
-    // Payload’ı globalde de cache’le (fallback davranışı için)
-    window.agoraInjectedPayload = payload;
+    window.agoraInjectedPayload = payload; // fallback için cache
     startGameFromPayload(payload);
   });
-
 
   // === Registry & Collisions ===
   const npcRegistry = new Map();             // key -> THREE.Group (root)
   const colliders  = [];                     // { key, root, r, padding }
   const PLAYER_RADIUS = 0.45;
-  const COLLISION_ENABLED = true;            // İstersen hızlı teşhis için false yap
+  const COLLISION_ENABLED = true;
 
-  const DEBUG_COLLIDERS = true;            // Geçici: true yapıp görünmez duvarları gör
-  const MAX_COLLIDER_RADIUS = 12;           // Güvenlik sınırı (m)
-  // sahne hazır olmadan THREE.Group oluşturma/ekleme yapma
+  const DEBUG_COLLIDERS = true;              // görünmez duvar teşhisi için
+  const MAX_COLLIDER_RADIUS = 12;
   let colliderDebug = null;
-  
 
   // === GROUND CONFIG ===
   const GROUND_MODE = "custom"; // "custom" | "mars"
@@ -94,7 +70,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const GROUND_MARS_NORMAL = "https://raw.githubusercontent.com/pmndrs/drei-assets/master/textures/planets/mars_normal.jpg";
   const GROUND_MARS_REPEAT = 22;
 
-  // Diskleri kapat
   const SHOW_PADS = false;
 
   const socket = io();
@@ -113,7 +88,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x090a14, 20, 120);
-    // debug grubunu şimdi yarat ve sahneye ekle
   colliderDebug = new THREE.Group();
   scene.add(colliderDebug);
 
@@ -285,7 +259,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       else if (d >= pack.dist + UNLOAD_HYSTERESIS && pack.loaded && pack.unload) _unloadPack(pack);
     }
   }
-  // Dışarı API
   window.AGORALazy = { register: registerLazyPack, packs: lazyPacks };
 
   // ---- Hotspots / Pads helpers ----
@@ -293,7 +266,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const _spaceBaseHotspotMeshes = new Map();
 
   function getAnyPadCenter() {
-    // Önce hotspotInfo (AgoraPad) — SHOW_PADS kapalıyken burası devreye girer
     const h = hotspotInfo.get('AgoraPad');
     if (h) return h.pos.clone();
 
@@ -305,10 +277,9 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
 
   // ---- NPC yardımcıları ----
-  const _spawnedNPC = new Set(); // url|name anahtarıyla dedup
+  const _spawnedNPC = new Set();
 
   function computeColliderInfo(root, padding = 0.30) {
-    // Bazı GLB'ler dev bir floor/shadow plane içeriyor; onları ele.
     const THIN_Y = 0.08;
     const IGNORE_NAMES = ["floor", "ground", "shadow", "plane", "grid"];
 
@@ -325,7 +296,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       const bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
       const hY = bb.max.y - bb.min.y;
 
-      // İncecik ve devasa yüzeyler (yer kaplaması) → yok say
       if (hY < THIN_Y && (bb.max.x - bb.min.x > 3 || bb.max.z - bb.min.z > 3)) return;
 
       usedAny = true;
@@ -336,7 +306,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     });
 
     if (!usedAny) {
-      // Fallback: Tüm objeden tek seferde hesapla
       const bb = new THREE.Box3().setFromObject(root);
       const size = bb.getSize(new THREE.Vector3());
       const cx = (bb.min.x + bb.max.x) * 0.5;
@@ -354,7 +323,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return { offX: cx - root.position.x, offZ: cz - root.position.z, r: Math.min(r, MAX_COLLIDER_RADIUS) };
   }
 
-  // (İsteğe bağlı) debug halkası
   function ensureDebugRing(forCollider) {
     if (!DEBUG_COLLIDERS) return;
     if (forCollider._ring) return;
@@ -376,7 +344,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     forCollider._ring.geometry.dispose();
     forCollider._ring.geometry = new THREE.RingGeometry(forCollider.r - 0.05, forCollider.r + 0.05, 64);
   }
-
 
   function spawnNPC(url, {
     onPad = false,
@@ -455,7 +422,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       npcRegistry.set(regKey, root);
 
       // ==== COLLIDER (XZ dairesel) ====
-      // ==== COLLIDER (XZ dairesel) ====
       if (collision) {
         const info = computeColliderInfo(root, colliderPadding);
         const col = { key: regKey, root, r: info.r, padding: colliderPadding, offX: info.offX, offZ: info.offZ };
@@ -469,7 +435,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
 
   function getNPC(key){ return npcRegistry.get(key) || null; }
-
   function removeNPC(key){
     const root = npcRegistry.get(key);
     if(!root) return false;
@@ -479,7 +444,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     if (i >= 0) colliders.splice(i,1);
     return true;
   }
-
   function setNPCPosition(key, x, z, y=0){
     const root = npcRegistry.get(key);
     if (!root) return;
@@ -497,7 +461,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
     return false;
   }
-
   function pushOutFromColliders(pos){
     let px = pos.x, pz = pos.z;
     for (const c of colliders){
@@ -515,14 +478,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
     pos.x = px; pos.z = pz;
   }
-
-
-  // Kaydırmalı çözüm
   function resolveCollision(px, pz, nx, nz){
     if (!collidesAt(nx, nz)) return { x:nx, z:nz };
-    if (!collidesAt(nx, pz)) return { x:nx, z:pz }; // slide X
-    if (!collidesAt(px, nz)) return { x:px, z:nz }; // slide Z
-    return { x:px, z:pz }; // tamamen engelli
+    if (!collidesAt(nx, pz)) return { x:nx, z:pz };
+    if (!collidesAt(px, nz)) return { x:px, z:nz };
+    return { x:px, z:pz };
   }
 
   // ---- Oyuncu: Stylized mini astronot
@@ -574,7 +534,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return { group: grp, torso, head, armL, armR, legL, legR: legRMesh };
   }
 
-  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{}, gender:'female', x:0, z:0 };
+  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{}, x:0, z:0 };
   {
     const parts = buildStylizedChar(0xffe4c4);
     local.parts = parts; scene.add(parts.group);
@@ -594,14 +554,14 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function ensureRemote(p){
     let R = remotes.get(p.id);
     if (R) return R;
-    const isFemale = (p.gender === 'female');
-    const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
-    const accent  = isFemale ? 0xff3a66 : 0xffffff;
+    // Tek tip görünüm (ileride NFT’den renk/stil türetiriz)
+    const bodyCol = 0xadd8e6;
+    const accent  = 0xffffff;
     const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
     parts.group.position.set(p.x||0, 0, p.z||0);
     const tag = makeNameSprite(p.name || `Yogi-${String(p.id).slice(0,4)}`);
     parts.group.add(tag);
-    R = { id: p.id, parts, tag, name: p.name || `Yogi-${String(p.id).slice(0,4)}`, gender: p.gender || 'female' };
+    R = { id: p.id, parts, tag, name: p.name || `Yogi-${String(p.id).slice(0,4)}` };
     scene.add(parts.group);
     remotes.set(p.id, R);
     return R;
@@ -610,8 +570,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   // Input
   const keys = new Set();
   let chatFocus = false;
-
-  // Klavye olayları — ENTER chate toggle eder; WASD/Ok tuşları her durumda preventDefault
   const MOVE_KEYS = new Set(["KeyW","KeyA","KeyS","KeyD","ShiftLeft","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
 
   document.addEventListener("keydown", (e) => {
@@ -636,19 +594,15 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }, { passive:false });
 
   if (playBtn) playBtn.addEventListener("click", () => {
-    // NFT entegrasyonu aktifse (index.html set edip agoraInit dispatch ettiyse)
-    if (window.agoraInjectedPayload) return; // join işini agoraInit handler yaptı
+    // NFT entegrasyonu aktifse (index.html agoraInit dispatch ettiyse) burada iş yok
+    if (window.agoraInjectedPayload) return;
 
     // ---- Fallback (NFT seçimi yoksa eski yol) ----
     const desired = (nameInput?.value||"").trim().slice(0,20);
     if (desired) { local.name = desired; if (local.tag) updateNameTag(local, desired); }
-    // Varsayılan cinsiyet: formdaki radio’yu okumaya çalış, yoksa female
-    const formGenderEl = document.querySelector('input[name="gender"]:checked');
-    const fallbackGender = (formGenderEl?.value || 'female');
-    setHudGender(fallbackGender);
 
-    socket.emit("profile:update", { name: desired || undefined, gender: fallbackGender });
-    socket.emit("join",           { name: desired || undefined, gender: fallbackGender });
+    socket.emit("profile:update", { name: desired || undefined });
+    socket.emit("join",           { name: desired || undefined });
 
     if (cta) cta.style.display = "none";
     try { renderer.domElement.requestPointerLock(); } catch(e){}
@@ -686,7 +640,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     camDist = Math.min(10, Math.max(2, camDist));
   }, {passive:true});
 
-  // Mobile joystick (touch bug fix: clientY kullan)
+  // Mobile joystick
   let joyActive = false, joyCenter = {x:0,y:0}, joyVec = {x:0,y:0};
   const stickHalf = () => (stick ? stick.getBoundingClientRect().width/2 : 0);
   function setStick(px,py){ if (!stick) return; stick.style.transform = `translate(${px - stickHalf()}px, ${py - stickHalf()}px)`; }
@@ -720,7 +674,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function addHotspotDisk(name, x, z, r){
     hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
     if (!SHOW_PADS) return;
-    // Disk mesh'lerini kapattık.
   }
 
   function addPlanet(p){
@@ -747,7 +700,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
 
   // Sockets
-  let staticSpawned = false; // NPC’leri bir kez üret
+  let staticSpawned = false;
   socket.on("bootstrap", ({ you, players, hotspots, planets }) => {
     local.id = you.id;
     local.name = you.name;
@@ -794,7 +747,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     if (!staticSpawned) {
       staticSpawned = true;
 
-      // 1) Neo Yogi — küçük bir tampon
       spawnNPC('/models/readyplayermale_cyberpunk.glb', {
         onPad: true,
         offset: { x: -7, z: -2 },
@@ -804,7 +756,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         colliderPadding: 0.15
       });
 
-      // 2) Agora Taxi — kontrollü yarıçap
       spawnNPC('/models/cyberpunk_car.glb', {
         onPad: true,
         offset: { x: 6, z: 1.5 },
@@ -814,7 +765,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         colliderPadding: 0.20
       });
 
-      // 3) Pyramid City — SADECE dekor, çarpışma KAPALI (büyük görünmez duvar ihtimalini bitirir)
       {
         const c = getAnyPadCenter();
         spawnNPC('/models/futuristic_pyramid_cityscape.glb', {
@@ -825,11 +775,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
           ry: -Math.PI * 5,
           targetDiag: 5,
           name: 'Pyramid City',
-          collision: false         // <— önemli
+          collision: false
         });
       }
 
-      // 4) Stack (hangar) — çarpışma AÇIK + elle yarıçap (gerekirse büyüt/küçült)
       spawnNPC('/models/sci-fi_modular_stack_asset.glb', {
         onPad: true,
         offset: { x: -12, z: 9 },
@@ -837,14 +786,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         y: 0.0,
         ry: Math.PI * 0.1,
         name: 'Stack Module',
-        colliderPadding: 0.25,
-        // colliderRadius: 6.0   // istersen şimdilik aç ve değeri deneyerek oturt
+        colliderPadding: 0.25
       });
 
-
-      // Örnek dinamik paket kayıtları
       // window.AGORALazy.register({ name:'props-zone-1', x: padPos.x + 28, z: padPos.z, url:'/models/props_pack.glb', dist:30, unload:true });
-      // window.AGORALazy.register({ name:'props-zone-2', x: padPos.x - 32, z: padPos.z + 18, url:'/models/benches.glb',   dist:28, unload:true });
     }
   });
 
@@ -933,18 +878,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       R.parts.group.position.lerp(new THREE.Vector3(p.x,0,p.z), 0.2);
       if (typeof p.ry === "number") R.parts.group.rotation.y = THREE.MathUtils.lerp(R.parts.group.rotation.y, p.ry, 0.2);
       if (R.name !== p.name && p.name) updateNameTag(R, p.name);
-      if (p.gender && p.gender !== R.gender){
-        const pos = R.parts.group.position.clone();
-        scene.remove(R.parts.group);
-        const isFemale = (p.gender==='female');
-        const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
-        const accent  = isFemale ? 0xff3a66 : 0xffffff;
-        const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
-        parts.group.position.copy(pos);
-        parts.group.add(R.tag);
-        scene.add(parts.group);
-        R.parts = parts; R.gender = p.gender;
-      }
+      // Cinsiyete göre model değiştirme KALDIRILDI
     });
   });
 
@@ -963,14 +897,13 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   function tick(now){
     for (const c of colliders) syncDebugRing(c);
-    // FPS hesabı (EWMA)
+    // FPS hesabı
     const _frameDt = now - _fpsLast; _fpsLast = now;
     const _instFps = 1000 / Math.max(1, _frameDt);
     _fpsEWMA = _fpsEWMA ? (_fpsEWMA*0.9 + _instFps*0.1) : _instFps;
 
     const dt = Math.min(0.05, (now-last)/1000); last = now;
 
-    // Spawn/ilk frame'de iç içe başlama ihtimaline karşı hafif push-out
     if (COLLISION_ENABLED) pushOutFromColliders(local.parts.group.position);
 
     // Movement
