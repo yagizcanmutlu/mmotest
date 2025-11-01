@@ -19,6 +19,19 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
 
+    // === GROUND CONFIG ===
+  const GROUND_MODE = "custom"; // "custom" | "mars"
+  const GROUND_CUSTOM_URL  = "/textures/ps_ground_2k.jpg";  // senin kare PS tekstürün (seamless olursa şahane)
+  const GROUND_CUSTOM_REPEAT = 18;                           // karo tekrarı (daha büyük = daha sık karo)
+  const GROUND_NORMAL_URL  = "";                             // varsa normal map koy (opsiyonel)// mars için boş bırak//
+
+  const GROUND_MARS_URL    = "https://raw.githubusercontent.com/pmndrs/drei-assets/master/textures/planets/mars_albedo.jpg";
+  const GROUND_MARS_NORMAL = "https://raw.githubusercontent.com/pmndrs/drei-assets/master/textures/planets/mars_normal.jpg";
+  const GROUND_MARS_REPEAT = 22;
+
+  // Diskleri tamamen kapat
+  const SHOW_PADS = false;
+
   const socket = io();
   const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
   if (joy) joy.style.display = isTouch ? "block" : "none";
@@ -50,15 +63,50 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   dir.position.set(6,10,4);
   scene.add(hemi, dir);
 
-  // Ground (biraz daha geniş)
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x0c0f14, roughness: 1.0 });
-  groundMat.polygonOffset = true;
-  groundMat.polygonOffsetFactor = 2;
-  groundMat.polygonOffsetUnits  = 2;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), groundMat);
+  // Ground (textured)
+  const tLoader = new THREE.TextureLoader();
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+  function loadTiledTexture(url, repeat=12){
+    const tex = tLoader.load(url, t => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.generateMipmaps = true;
+      t.anisotropy = maxAniso;
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.minFilter = THREE.LinearMipmapLinearFilter;
+      t.magFilter = THREE.LinearFilter;
+      t.needsUpdate = true;
+    });
+    tex.repeat.set(repeat, repeat);
+    return tex;
+  }
+
+  let baseURL, normalURL, rep;
+  if (GROUND_MODE === "mars") {
+    baseURL = GROUND_MARS_URL; normalURL = GROUND_MARS_NORMAL; rep = GROUND_MARS_REPEAT;
+  } else {
+    baseURL = GROUND_CUSTOM_URL; normalURL = GROUND_NORMAL_URL || null; rep = GROUND_CUSTOM_REPEAT;
+  }
+
+  const groundMap = loadTiledTexture(baseURL, rep);
+  const groundNormal = normalURL ? loadTiledTexture(normalURL, rep) : null;
+
+  const groundMat = new THREE.MeshStandardMaterial({
+    map: groundMap,
+    normalMap: groundNormal || undefined,
+    roughness: 1.0,
+    metalness: 0.0
+  });
+
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200, 1, 1), groundMat);
   ground.rotation.x = -Math.PI/2;
   ground.receiveShadow = true;
   scene.add(ground);
+
+  // Ufuk “glitch”ini azaltmak için: biraz daha koyu sis ve daha yakın başlangıç
+  scene.fog = new THREE.Fog(0x05060a, 8, 140);
+  // yıldız pırıltılarını ufukta aliasing yapmasın diye hafif küçült
+  stars.material.size = 0.45;
 
   // Stars
   const starGeom = new THREE.BufferGeometry();
