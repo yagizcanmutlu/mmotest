@@ -734,6 +734,15 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         name: 'Agora Taxi'
       });
 
+            // bootstrap içi, staticSpawned bloğunun SONUNA ekle:
+      spawnNPC('/models/sci-fi_modular_stack_asset.glb', {
+        onPad: true,                 // ana pad’i referans al
+        offset: { x: -12, z: 9 },    // pad merkezine göre konum
+        targetDiag: 14,              // ilk boyut: “diyagonal” ~14m
+        y: 0.0,                      // zeminden ekstra yükseklik
+        ry: Math.PI * 0.1,           // hafif dönüş
+        name: 'Stack Module'
+      });
       // --- Dinamik paket ÖRNEK kaydı (istersen aç) ---
       // window.AGORALazy.register({ name:'props-zone-1', x: padPos.x + 28, z: padPos.z, url:'/models/props_pack.glb', dist:30, unload:true });
       // window.AGORALazy.register({ name:'props-zone-2', x: padPos.x - 32, z: padPos.z + 18, url:'/models/benches.glb',   dist:28, unload:true });
