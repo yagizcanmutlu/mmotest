@@ -51,7 +51,7 @@ app.use((req, _res, next) => {
 
 app.use(cors(corsOptions));
 // 🔧 Express 5 uyumlu wildcard:
-app.options("/(.*)", cors(corsOptions));  // <— sadece bu satır önemli
+//app.options("/(.*)", cors(corsOptions));  // <— sadece bu satır önemli
 app.use(express.json());
 
 // ---- Socket.io (aynı whitelist) ----
