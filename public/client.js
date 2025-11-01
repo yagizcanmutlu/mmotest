@@ -24,6 +24,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const joy      = document.getElementById("joystick");
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
+    // === Registry & Collisions === KARAKTERLER & ÇARPIŞMALAR ===
+  const npcRegistry = new Map();               // key -> THREE.Group (root)
+  const colliders  = [];                       // { key, root, r, padding }
+  const PLAYER_RADIUS = 0.45;                  // mini astronotun “çap”ı ~0.9m ise yarıçap ~0.45
+
 
     // === GROUND CONFIG ===
   const GROUND_MODE = "custom"; // "custom" | "mars"
@@ -249,7 +254,9 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     offset = { x:0, z:0 },
     targetHeight = null,
     targetDiag   = null,
-    x=0, z=0, y=0, ry=0, scale=null, name=null
+    x=0, z=0, y=0, ry=0, scale=null, name=null,
+    collision = true,           // <— yeni: collider açılsın mı?
+    colliderPadding = 0.30      // <— yeni: objeye ekstra tampon
   } = {}) {
     if (!gltfLoader) { console.warn('GLTFLoader yok, NPC yüklenemez:', url); return; }
 // 🔒 Aynı (url+name) için ikinci kez yükleme yapma
@@ -321,10 +328,24 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
       scene.add(root);
       console.log('[NPC]', url, 'spawn @', root.position);
+            // ==== KAYIT (registry) ====
+      const key = name || url;
+      npcRegistry.set(key, root);
+
+      // ==== COLLIDER (XZ dairesel) ====
+      if (collision) {
+        // world boyutuna göre yarıçap hesapla
+        root.updateMatrixWorld(true);
+        const bb   = new THREE.Box3().setFromObject(root);
+        const size = bb.getSize(new THREE.Vector3());
+        const rXZ  = 0.5 * Math.hypot(size.x, size.z) + colliderPadding;
+        colliders.push({ key, root, r: rXZ, padding: colliderPadding });
+      }
     }, undefined, (err) => {
       console.error('NPC yüklenemedi:', url, err);
     });
 
+    
       // Pyramid City – pad merkezinin sağına, hafif döndürülmüş
   {
     const c = getAnyPadCenter(); // mevcut ana pad merkezi
@@ -342,6 +363,49 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
 
   }
+
+  function getNPC(key){ return npcRegistry.get(key) || null; }
+
+  function removeNPC(key){
+    const root = npcRegistry.get(key);
+    if(!root) return false;
+    scene.remove(root);
+    npcRegistry.delete(key);
+    // collider'ı da düşür
+    const i = colliders.findIndex(c => c.key === key);
+    if (i >= 0) colliders.splice(i,1);
+    return true;
+  }
+
+  function setNPCPosition(key, x, z, y=0){
+    const root = npcRegistry.get(key);
+    if (!root) return;
+    root.position.set(x, y, z);
+  }
+// Çarpışma fonksiyonları 
+  function collidesAt(nx, nz){
+    for (const c of colliders){
+      const cx = c.root ? c.root.position.x : c.x;
+      const cz = c.root ? c.root.position.z : c.z;
+      const rr = (c.r || 1) + PLAYER_RADIUS;
+      const dx = nx - cx, dz = nz - cz;
+      if (dx*dx + dz*dz < rr*rr) return true;
+    }
+    return false;
+  }
+
+  // Kaydırmalı çözüm: önce tam, sonra X ya da Z ekseninde kaydırarak dener
+  function resolveCollision(px, pz, nx, nz){
+    if (!collidesAt(nx, nz)) return { x:nx, z:nz };
+    // slide X
+    if (!collidesAt(nx, pz)) return { x:nx, z:pz };
+    // slide Z
+    if (!collidesAt(px, nz)) return { x:px, z:nz };
+    // tamamen engelli: yerinde kal
+    return { x:px, z:pz };
+  }
+    
+    
 
   // ---- Oyuncu: Stylized mini astronot
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff, opts={}){
@@ -885,8 +949,16 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
       const dx = forward * sin - strafe * cos;
       const dz = forward * cos + strafe * sin;
-      local.parts.group.position.x += dx * spd * dt;
-      local.parts.group.position.z += dz * spd * dt;
+
+      const px = local.parts.group.position.x;
+      const pz = local.parts.group.position.z;
+
+      const nx = px + dx * spd * dt;
+      const nz = pz + dz * spd * dt;
+
+      const solved = resolveCollision(px, pz, nx, nz);
+      local.parts.group.position.x = solved.x;
+      local.parts.group.position.z = solved.z;
     }
 
     local.parts.group.rotation.y = local.yaw;
