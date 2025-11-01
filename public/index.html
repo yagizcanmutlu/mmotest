@@ -340,6 +340,25 @@
     })();
   </script>
 
+  <script>
+  const socket = io("/", {
+    transports: ["websocket", "polling"],
+    upgrade: true,
+    timeout: 20000,
+    reconnection: true,
+    reconnectionAttempts: 10,
+    reconnectionDelay: 800,
+    withCredentials: true
+  });
+
+  socket.on("connect_error", (err) => {
+    // WebSocket upgrade hatalarını sessize al
+    if (String(err?.message || "").toLowerCase().includes("websocket")) return;
+    console.warn("socket connect_error", err);
+  });
+</script>
+
+
   <!-- Sıra önemli: önce socket.io, sonra module client -->
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="/client.js"></script>
