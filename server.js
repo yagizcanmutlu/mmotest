@@ -1,11 +1,14 @@
 // server.js — Byzas Agora (Planets + Stylized Avatars + NFT API)
-
 const express = require("express");
 const http = require("http");
 const path = require("path");
 const cors = require("cors");
 const { Server } = require("socket.io");
+
+// .env yerelse okuyalım (Render prod’da da zararsız)
 try { require("dotenv").config(); } catch {}
+
+// Node 18+ global fetch var; daha eski Node ise node-fetch’e düş
 if (typeof fetch === "undefined") {
   global.fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 }
@@ -13,7 +16,12 @@ if (typeof fetch === "undefined") {
 const app = express();
 const server = http.createServer(app);
 
-// ---- CORS ----
+/* ──────────────────────────────────────────────────────────────
+   1) CORS (Whitelist + Preflight fix)
+   - Hem apex hem www domain’lerini kapsıyoruz
+   - Express 5 için preflight route’u REGEX ile tanımlıyoruz
+   - Render’ın kendi public URL’sini de otomatik whiteliste ekliyoruz
+   ────────────────────────────────────────────────────────────── */
 const SELF_URL =
   process.env.RENDER_EXTERNAL_URL ||
   (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : "");
@@ -25,23 +33,29 @@ const WHITELIST = [
   "https://cryptoyogi.world",
   "https://www.cryptoyogi.world",
   "https://yagizcanmutlu.github.io",
-  SELF_URL,
-  "http://localhost:3000",
+  SELF_URL,                   // Render’daki public URL
+  "http://localhost:3000",    // lokal geliştirme
   "http://127.0.0.1:3000",
 ].filter(Boolean);
 
-const corsOptions = {
+// Güvenli origin denetleyici
+function corsOrigin(origin, cb) {
+  // origin header yok (curl/healthz gibi) → izin ver
+  if (!origin) return cb(null, true);
+  // birebir eşleşme (protocol + host bazlı)
+  if (WHITELIST.includes(origin)) return cb(null, true);
+  console.warn("[CORS BLOCKED]", origin);
+  return cb(new Error("Not allowed by CORS: " + origin));
+}
+
+const corsMw = cors({
+  origin: corsOrigin,
   credentials: true,
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  origin(origin, cb) {
-    if (!origin) return cb(null, true);
-    if (WHITELIST.includes(origin)) return cb(null, true);
-    console.warn("[CORS BLOCKED]", origin);
-    cb(new Error("Not allowed by CORS: " + origin));
-  },
-};
+});
 
+// Basit API logu (origin’i görmek için)
 app.use((req, _res, next) => {
   if (req.path.startsWith("/api")) {
     console.log("[API]", req.method, req.path, "Origin:", req.headers.origin || "-");
@@ -49,31 +63,36 @@ app.use((req, _res, next) => {
   next();
 });
 
-app.use(cors(corsOptions));
-// 🔧 Express 5 uyumlu wildcard:
-//app.options("/(.*)", cors(corsOptions));  // <— sadece bu satır önemli
+app.use(corsMw);
+// ⚠️ Express 5’te string pattern "/(.*)" path-to-regexp hatasına yol açar.
+// Doğrusu: REGEX kullanmak.
+app.options(/.*/, corsMw);
+
 app.use(express.json());
 
-// ---- Socket.io (aynı whitelist) ----
+/* ──────────────────────────────────────────────────────────────
+   2) Socket.IO — CORS aynı whitelist ile
+   ────────────────────────────────────────────────────────────── */
 const io = new Server(server, {
   cors: {
-    credentials: true,
+    origin: corsOrigin,
     methods: ["GET", "POST"],
-    origin(origin, cb) {
-      if (!origin) return cb(null, true);
-      if (WHITELIST.includes(origin)) return cb(null, true);
-      console.warn("[WS CORS BLOCKED]", origin);
-      cb(new Error("Not allowed by CORS (ws): " + origin));
-    },
+    credentials: true,
   },
 });
 
-// ---- Static ----
+/* ──────────────────────────────────────────────────────────────
+   3) Statik dosyalar (public/index.html)
+   ────────────────────────────────────────────────────────────── */
 const PUBLIC_DIR = path.join(__dirname, "public");
 app.use(express.static(PUBLIC_DIR));
 app.get("/", (_req, res) => res.sendFile(path.join(PUBLIC_DIR, "index.html")));
 
-// ---- NFT API ----
+/* ──────────────────────────────────────────────────────────────
+   4) NFT API (Airtable)
+   GET /api/nfts?wallet=EQxxxx
+   Env: AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NFT (varsayılan: nft_list)
+   ────────────────────────────────────────────────────────────── */
 app.get("/api/nfts", async (req, res) => {
   try {
     const wallet = (req.query.wallet || "").trim().toLowerCase();
@@ -82,9 +101,11 @@ app.get("/api/nfts", async (req, res) => {
     const baseId = process.env.AIRTABLE_BASE_ID;
     const apiKey = process.env.AIRTABLE_API_KEY;
     const tableName = process.env.AIRTABLE_TABLE_NFT || "nft_list";
-    const table = encodeURIComponent(tableName);
-    if (!baseId || !apiKey) return res.status(500).json({ error: "server_misconfigured" });
+    if (!baseId || !apiKey) {
+      return res.status(500).json({ error: "server_misconfigured" });
+    }
 
+    const table = encodeURIComponent(tableName);
     const formula = `LOWER({wallet})='${wallet}'`;
     const url = `https://api.airtable.com/v0/${baseId}/${table}?filterByFormula=${encodeURIComponent(formula)}`;
 
@@ -98,7 +119,11 @@ app.get("/api/nfts", async (req, res) => {
     const data = await r.json();
     const nfts = (data.records || []).map((rec) => {
       const f = rec.fields || {};
-      const img = Array.isArray(f.image) && f.image.length ? f.image[0].url : f.image_url || f.image || null;
+      // Attachment ise ilk görselin url’i; değilse alternatif alanlar
+      const img =
+        Array.isArray(f.image) && f.image.length ? f.image[0].url :
+        f.image_url || f.image || null;
+
       return {
         id: rec.id,
         name: f.nft_name_list || f.name || "Unnamed NFT",
@@ -106,12 +131,14 @@ app.get("/api/nfts", async (req, res) => {
         atk: f.ap ?? f.atk ?? 0,
         def: f.dp ?? f.def ?? 0,
         level: f.level ?? 1,
-        crit: f.crit_chance ?? 0.2,
+        crit: Number(f.crit_chance ?? f.crit ?? 0.2),
         gender: (f.gender || "").toLowerCase(),
         wallet: (f.wallet || "").toLowerCase(),
       };
     });
 
+    // Opsiyonel: biraz cache (Airtable kotasını korur)
+    res.setHeader("Cache-Control", "public, max-age=30");
     res.json({ nfts });
   } catch (err) {
     console.error("GET /api/nfts failed", err);
@@ -119,12 +146,12 @@ app.get("/api/nfts", async (req, res) => {
   }
 });
 
-// ---- Sağlık ----
+// Sağlık kontrolü
 app.get("/healthz", (_req, res) => res.send("ok"));
 
-/* ──────────────────────────
-   5) Agora oyun mantığı
-   ────────────────────────── */
+/* ──────────────────────────────────────────────────────────────
+   5) Agora oyun mantığı (mevcudun)
+   ────────────────────────────────────────────────────────────── */
 const ROOM = "agora";
 const TICK_HZ = 10;
 
@@ -132,12 +159,12 @@ const PLANETS = [
   { name: "Astra",  color: 0xffcf5a, x:  10, z:  -5, radius: 2.2, r: 3.0 },
   { name: "Nyx",    color: 0x8a6cff, x: -12, z:  -8, radius: 2.8, r: 3.5 },
   { name: "Verda",  color: 0x39d98a, x:   4, z:  12, radius: 1.8, r: 2.6 },
-  { name: "Cinder", color: 0xff6b6b, x:  -9, z:   9, radius: 2.4, r: 3.2 }
+  { name: "Cinder", color: 0xff6b6b, x:  -9, z:   9, radius: 2.4, r: 3.2 },
 ];
 
 const hotspots = [
   { name: "Totem", x: 0, z: 0, r: 3 },
-  ...PLANETS.map((p) => ({ name: `Planet:${p.name}`, x: p.x, z: p.z, r: p.r }))
+  ...PLANETS.map((p) => ({ name: `Planet:${p.name}`, x: p.x, z: p.z, r: p.r })),
 ];
 
 function randSpawn() {
@@ -165,11 +192,12 @@ io.on("connection", (socket) => {
     greetCount: 0,
     greetDone: false,
     lastChatTs: 0,
-    dailyKey: null
+    dailyKey: null,
   };
   players.set(socket.id, you);
   socket.join(ROOM);
 
+  // Günlük +10
   const key = todayKey();
   if (you.dailyKey !== key) {
     you.dailyKey = key;
@@ -177,13 +205,14 @@ io.on("connection", (socket) => {
     socket.emit("points:update", { total: you.points, delta: +10, reason: "Daily check-in" });
   }
 
+  // Bootstrap snapshot
   socket.emit("bootstrap", {
     you,
     players: Array.from(players.entries())
       .filter(([id]) => id !== socket.id)
       .map(([id, p]) => ({ id, x: p.x, y: p.y, z: p.z, ry: p.ry, name: p.name, rank: p.rank, emote: p.emote })),
     hotspots,
-    planets: PLANETS
+    planets: PLANETS,
   });
 
   socket.to(ROOM).emit("player-joined", { id: you.id, x: you.x, y: you.y, z: you.z, ry: you.ry, name: you.name, rank: you.rank });
@@ -226,7 +255,6 @@ io.on("connection", (socket) => {
     if (emoteCmd) return playEmote(p, emoteCmd.slice(1));
 
     io.to(ROOM).emit("chat:msg", { from: { id: p.id, name: p.name, rank: p.rank }, text: msg, ts: now });
-
     if (!p._saidHello && /selam|hello|hi|merhaba/i.test(msg)) {
       p._saidHello = todayKey();
       p.points += 1;
@@ -280,13 +308,15 @@ io.on("connection", (socket) => {
   });
 });
 
+// Periyodik snapshot
 setInterval(() => {
   const snap = Array.from(players.entries()).map(([id, p]) => ({
     id, x: p.x, y: p.y, z: p.z, ry: p.ry, name: p.name, rank: p.rank,
-    emote: p.emoteUntil > Date.now() ? p.emote : null
+    emote: p.emoteUntil > Date.now() ? p.emote : null,
   }));
   io.to(ROOM).emit("snapshot", { players: snap });
 }, 1000 / TICK_HZ);
 
+// Boot
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Byzas Agora listening on :${PORT} (SELF_URL: ${SELF_URL || "-"})`));
