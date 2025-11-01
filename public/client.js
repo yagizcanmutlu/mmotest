@@ -103,10 +103,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Ufuk “glitch”ini azaltmak için: biraz daha koyu sis ve daha yakın başlangıç
-  scene.fog = new THREE.Fog(0x05060a, 8, 140);
-  // yıldız pırıltılarını ufukta aliasing yapmasın diye hafif küçült
-  stars.material.size = 0.45;
 
   // Stars
   const starGeom = new THREE.BufferGeometry();
@@ -117,6 +113,12 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   starGeom.setAttribute("position", new THREE.Float32BufferAttribute(starPos, 3));
   const stars = new THREE.Points(starGeom, new THREE.PointsMaterial({ size:0.6, color:0x8cbcff }));
   scene.add(stars);
+
+    // Ufuk “glitch”ini azaltmak için: biraz daha koyu sis ve daha yakın başlangıç
+  scene.fog = new THREE.Fog(0x05060a, 8, 140);
+  // yıldız pırıltılarını ufukta aliasing yapmasın diye hafif küçült
+  stars.material.size = 0.45;
+
 
   // === PERF LOGGER (FPS + draw/tri/tex/geo) ===
   let _fpsEWMA = 0, _fpsLast = performance.now();
