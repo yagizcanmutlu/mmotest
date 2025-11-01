@@ -5,11 +5,7 @@ const http = require("http");
 const path = require("path");
 const cors = require("cors");
 const { Server } = require("socket.io");
-
-// (Opsiyonel) Lokal geliştirirken .env kullanıyorsan
 try { require("dotenv").config(); } catch {}
-
-// Node 18+ global fetch var; daha eski Node için fallback
 if (typeof fetch === "undefined") {
   global.fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 }
@@ -17,16 +13,11 @@ if (typeof fetch === "undefined") {
 const app = express();
 const server = http.createServer(app);
 
-/* ─────────────────────────────────────────────────────────
-   1) CORS (Express + Socket.io aynı whitelist'i kullanır)
-   ───────────────────────────────────────────────────────── */
-
-// Render kendi dış hostname'ini env'den oku (örn: https://mmotest-5uut.onrender.com)
+// ---- CORS ----
 const SELF_URL =
   process.env.RENDER_EXTERNAL_URL ||
   (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : "");
 
-// Tek whitelist (apex + www + Webflow + GH Pages + SELF_URL + local)
 const WHITELIST = [
   "https://cryptoyogi.webflow.io",
   "https://cryptoyogi.com",
@@ -36,7 +27,7 @@ const WHITELIST = [
   "https://yagizcanmutlu.github.io",
   SELF_URL,
   "http://localhost:3000",
-  "http://127.0.0.1:3000"
+  "http://127.0.0.1:3000",
 ].filter(Boolean);
 
 const corsOptions = {
@@ -44,15 +35,13 @@ const corsOptions = {
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   origin(origin, cb) {
-    // Origin yoksa (curl/healthz/same-origin) izin ver
     if (!origin) return cb(null, true);
     if (WHITELIST.includes(origin)) return cb(null, true);
     console.warn("[CORS BLOCKED]", origin);
-    return cb(new Error("Not allowed by CORS: " + origin));
-  }
+    cb(new Error("Not allowed by CORS: " + origin));
+  },
 };
 
-// Basit API çağrı logu (debug için faydalı)
 app.use((req, _res, next) => {
   if (req.path.startsWith("/api")) {
     console.log("[API]", req.method, req.path, "Origin:", req.headers.origin || "-");
@@ -61,12 +50,11 @@ app.use((req, _res, next) => {
 });
 
 app.use(cors(corsOptions));
-app.options("/(.*)", cors(corsOptions)); // ✅ Express 5 uyumlu wildcard // preflight
+// 🔧 Express 5 uyumlu wildcard:
+app.options("/(.*)", cors(corsOptions));  // <— sadece bu satır önemli
 app.use(express.json());
 
-/* ──────────────────────────
-   2) Socket.IO (aynı whitelist)
-   ────────────────────────── */
+// ---- Socket.io (aynı whitelist) ----
 const io = new Server(server, {
   cors: {
     credentials: true,
@@ -75,23 +63,17 @@ const io = new Server(server, {
       if (!origin) return cb(null, true);
       if (WHITELIST.includes(origin)) return cb(null, true);
       console.warn("[WS CORS BLOCKED]", origin);
-      return cb(new Error("Not allowed by CORS (ws): " + origin));
-    }
-  }
+      cb(new Error("Not allowed by CORS (ws): " + origin));
+    },
+  },
 });
 
-/* ──────────────────────────
-   3) Statik dosyalar
-   ────────────────────────── */
+// ---- Static ----
 const PUBLIC_DIR = path.join(__dirname, "public");
 app.use(express.static(PUBLIC_DIR));
 app.get("/", (_req, res) => res.sendFile(path.join(PUBLIC_DIR, "index.html")));
 
-/* ──────────────────────────
-   4) NFT API
-   GET /api/nfts?wallet=EQxxxx
-   Env: AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NFT (default: nft_list)
-   ────────────────────────── */
+// ---- NFT API ----
 app.get("/api/nfts", async (req, res) => {
   try {
     const wallet = (req.query.wallet || "").trim().toLowerCase();
@@ -101,10 +83,7 @@ app.get("/api/nfts", async (req, res) => {
     const apiKey = process.env.AIRTABLE_API_KEY;
     const tableName = process.env.AIRTABLE_TABLE_NFT || "nft_list";
     const table = encodeURIComponent(tableName);
-
-    if (!baseId || !apiKey) {
-      return res.status(500).json({ error: "server_misconfigured" });
-    }
+    if (!baseId || !apiKey) return res.status(500).json({ error: "server_misconfigured" });
 
     const formula = `LOWER({wallet})='${wallet}'`;
     const url = `https://api.airtable.com/v0/${baseId}/${table}?filterByFormula=${encodeURIComponent(formula)}`;
@@ -119,10 +98,7 @@ app.get("/api/nfts", async (req, res) => {
     const data = await r.json();
     const nfts = (data.records || []).map((rec) => {
       const f = rec.fields || {};
-      const img =
-        Array.isArray(f.image) && f.image.length ? f.image[0].url :
-        f.image_url || f.image || null;
-
+      const img = Array.isArray(f.image) && f.image.length ? f.image[0].url : f.image_url || f.image || null;
       return {
         id: rec.id,
         name: f.nft_name_list || f.name || "Unnamed NFT",
@@ -132,7 +108,7 @@ app.get("/api/nfts", async (req, res) => {
         level: f.level ?? 1,
         crit: f.crit_chance ?? 0.2,
         gender: (f.gender || "").toLowerCase(),
-        wallet: (f.wallet || "").toLowerCase()
+        wallet: (f.wallet || "").toLowerCase(),
       };
     });
 
@@ -143,7 +119,7 @@ app.get("/api/nfts", async (req, res) => {
   }
 });
 
-// Sağlık kontrolü
+// ---- Sağlık ----
 app.get("/healthz", (_req, res) => res.send("ok"));
 
 /* ──────────────────────────
