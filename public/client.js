@@ -51,8 +51,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   // Ground
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x0c0f14, roughness: 1.0 });
   groundMat.polygonOffset = true;
-  groundMat.polygonOffsetFactor = 1;
-  groundMat.polygonOffsetUnits  = 1;
+  groundMat.polygonOffsetFactor = 2;
+  groundMat.polygonOffsetUnits  = 2;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), groundMat);
   ground.rotation.x = -Math.PI/2;
   ground.receiveShadow = true;
