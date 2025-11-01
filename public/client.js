@@ -304,6 +304,23 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }, undefined, (err) => {
       console.error('NPC yüklenemedi:', url, err);
     });
+
+      // Pyramid City – pad merkezinin sağına, hafif döndürülmüş
+  {
+    const c = getAnyPadCenter(); // mevcut ana pad merkezi
+    spawnNPC('/models/futuristic_pyramid_cityscape.glb', {
+      onPad: false,
+      x: c.x + 32,   // konumu kendine göre ayarla
+      z: c.z - 18,
+      y: 0,          // z-fighting olursa 0.05 yap
+      ry: -Math.PI * 0.08,
+      // model büyükse/ küçükse tek yerden ölçeklemek için targetDiag kullan:
+      targetDiag: 120,     // "yaklaşık" diyagonal (m). Göz kararı ayarlarsın.
+      // ya da boy kontrolü: targetHeight: 30,
+      name: 'Pyramid City'
+    });
+  }
+
   }
 
   // ---- Oyuncu: Stylized mini astronot

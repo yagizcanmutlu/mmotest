@@ -4,7 +4,15 @@ const http = require("http");
 const path = require("path");
 const { Server } = require("socket.io");
 
+import path from "path";
+import express from "express";
 const app = express();
+
+app.use(express.static(path.join(process.cwd(), "public")));
+app.use("/models", express.static(path.join(process.cwd(), "public", "models"), {
+  maxAge: "30d", immutable: true
+}));
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET","POST"] }, // prototip: açık
