@@ -61,7 +61,7 @@ app.use((req, _res, next) => {
 });
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // preflight
+app.options("/(.*)", cors(corsOptions)); // ✅ Express 5 uyumlu wildcard // preflight
 app.use(express.json());
 
 /* ──────────────────────────
