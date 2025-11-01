@@ -6,10 +6,10 @@ const path = require("path");
 const cors = require("cors");
 const { Server } = require("socket.io");
 
-// (Opsiyonel) Lokal geliştirirken .env kullanıyorsan aç:
+// (Opsiyonel) Lokal geliştirirken .env kullanıyorsan
 try { require("dotenv").config(); } catch {}
 
-// Node 18+ global fetch var. Daha eski Node'ta node-fetch'e düş:
+// Node 18+ global fetch var; daha eski Node için fallback
 if (typeof fetch === "undefined") {
   global.fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 }
@@ -17,40 +17,51 @@ if (typeof fetch === "undefined") {
 const app = express();
 const server = http.createServer(app);
 
-/* ──────────────────────────
-   1) CORS (preflight dâhil)
-   ────────────────────────── */
-const ALLOWED_ORIGINS = new Set([
-  "https://cryptoyogi.webflow.io",
-  "https://www.cryptoyogi.com",
-  "https://www.cryptoyogi.world",
-  "https://yagizcanmutlu.github.io", // gerekiyorsa dursun
-]);
+/* ─────────────────────────────────────────────────────────
+   1) CORS (Express + Socket.io aynı whitelist'i kullanır)
+   ───────────────────────────────────────────────────────── */
 
-const corsConfig = {
-  origin(origin, cb) {
-    // Origin header yoksa (curl / healthz / Render health check) izin ver
-    if (!origin) return cb(null, true);
-    if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
-    return cb(new Error("Not allowed by CORS: " + origin));
-  },
+// Render kendi dış hostname'ini env'den oku (örn: https://mmotest-5uut.onrender.com)
+const SELF_URL =
+  process.env.RENDER_EXTERNAL_URL ||
+  (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : "");
+
+// Tek whitelist (apex + www + Webflow + GH Pages + SELF_URL + local)
+const WHITELIST = [
+  "https://cryptoyogi.webflow.io",
+  "https://cryptoyogi.com",
+  "https://www.cryptoyogi.com",
+  "https://cryptoyogi.world",
+  "https://www.cryptoyogi.world",
+  "https://yagizcanmutlu.github.io",
+  SELF_URL,
+  "http://localhost:3000",
+  "http://127.0.0.1:3000"
+].filter(Boolean);
+
+const corsOptions = {
   credentials: true,
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  exposedHeaders: [],
+  origin(origin, cb) {
+    // Origin yoksa (curl/healthz/same-origin) izin ver
+    if (!origin) return cb(null, true);
+    if (WHITELIST.includes(origin)) return cb(null, true);
+    console.warn("[CORS BLOCKED]", origin);
+    return cb(new Error("Not allowed by CORS: " + origin));
+  }
 };
 
+// Basit API çağrı logu (debug için faydalı)
 app.use((req, _res, next) => {
-  // Küçük bir debug: Render Logs'ta hangi origin'den gelmiş gör
   if (req.path.startsWith("/api")) {
     console.log("[API]", req.method, req.path, "Origin:", req.headers.origin || "-");
   }
   next();
 });
-app.use(cors(corsConfig));
-app.options(/.*/, cors(corsConfig)); // Express 5 uyumlu: regex ile tüm OPTIONS'ları ele al
 
-
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // preflight
 app.use(express.json());
 
 /* ──────────────────────────
@@ -58,14 +69,15 @@ app.use(express.json());
    ────────────────────────── */
 const io = new Server(server, {
   cors: {
+    credentials: true,
+    methods: ["GET", "POST"],
     origin(origin, cb) {
       if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+      if (WHITELIST.includes(origin)) return cb(null, true);
+      console.warn("[WS CORS BLOCKED]", origin);
       return cb(new Error("Not allowed by CORS (ws): " + origin));
-    },
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
+    }
+  }
 });
 
 /* ──────────────────────────
@@ -107,7 +119,6 @@ app.get("/api/nfts", async (req, res) => {
     const data = await r.json();
     const nfts = (data.records || []).map((rec) => {
       const f = rec.fields || {};
-      // Airtable "attachment" alanı dizi olur; ilk öğenin url'ini yakala.
       const img =
         Array.isArray(f.image) && f.image.length ? f.image[0].url :
         f.image_url || f.image || null;
@@ -121,7 +132,7 @@ app.get("/api/nfts", async (req, res) => {
         level: f.level ?? 1,
         crit: f.crit_chance ?? 0.2,
         gender: (f.gender || "").toLowerCase(),
-        wallet: (f.wallet || "").toLowerCase(),
+        wallet: (f.wallet || "").toLowerCase()
       };
     });
 
@@ -132,11 +143,11 @@ app.get("/api/nfts", async (req, res) => {
   }
 });
 
-// Basit sağlık kontrolü
+// Sağlık kontrolü
 app.get("/healthz", (_req, res) => res.send("ok"));
 
 /* ──────────────────────────
-   5) Agora oyun mantığı (mevcudun)
+   5) Agora oyun mantığı
    ────────────────────────── */
 const ROOM = "agora";
 const TICK_HZ = 10;
@@ -145,12 +156,12 @@ const PLANETS = [
   { name: "Astra",  color: 0xffcf5a, x:  10, z:  -5, radius: 2.2, r: 3.0 },
   { name: "Nyx",    color: 0x8a6cff, x: -12, z:  -8, radius: 2.8, r: 3.5 },
   { name: "Verda",  color: 0x39d98a, x:   4, z:  12, radius: 1.8, r: 2.6 },
-  { name: "Cinder", color: 0xff6b6b, x:  -9, z:   9, radius: 2.4, r: 3.2 },
+  { name: "Cinder", color: 0xff6b6b, x:  -9, z:   9, radius: 2.4, r: 3.2 }
 ];
 
 const hotspots = [
   { name: "Totem", x: 0, z: 0, r: 3 },
-  ...PLANETS.map((p) => ({ name: `Planet:${p.name}`, x: p.x, z: p.z, r: p.r })),
+  ...PLANETS.map((p) => ({ name: `Planet:${p.name}`, x: p.x, z: p.z, r: p.r }))
 ];
 
 function randSpawn() {
@@ -178,7 +189,7 @@ io.on("connection", (socket) => {
     greetCount: 0,
     greetDone: false,
     lastChatTs: 0,
-    dailyKey: null,
+    dailyKey: null
   };
   players.set(socket.id, you);
   socket.join(ROOM);
@@ -196,7 +207,7 @@ io.on("connection", (socket) => {
       .filter(([id]) => id !== socket.id)
       .map(([id, p]) => ({ id, x: p.x, y: p.y, z: p.z, ry: p.ry, name: p.name, rank: p.rank, emote: p.emote })),
     hotspots,
-    planets: PLANETS,
+    planets: PLANETS
   });
 
   socket.to(ROOM).emit("player-joined", { id: you.id, x: you.x, y: you.y, z: you.z, ry: you.ry, name: you.name, rank: you.rank });
@@ -236,9 +247,7 @@ io.on("connection", (socket) => {
 
     const lower = msg.toLowerCase();
     const emoteCmd = ["/wave", "/dance", "/sit", "/clap", "/point", "/cheer"].find((c) => lower.startsWith(c));
-    if (emoteCmd) {
-      return playEmote(p, emoteCmd.slice(1));
-    }
+    if (emoteCmd) return playEmote(p, emoteCmd.slice(1));
 
     io.to(ROOM).emit("chat:msg", { from: { id: p.id, name: p.name, rank: p.rank }, text: msg, ts: now });
 
@@ -297,17 +306,11 @@ io.on("connection", (socket) => {
 
 setInterval(() => {
   const snap = Array.from(players.entries()).map(([id, p]) => ({
-    id,
-    x: p.x,
-    y: p.y,
-    z: p.z,
-    ry: p.ry,
-    name: p.name,
-    rank: p.rank,
-    emote: p.emoteUntil > Date.now() ? p.emote : null,
+    id, x: p.x, y: p.y, z: p.z, ry: p.ry, name: p.name, rank: p.rank,
+    emote: p.emoteUntil > Date.now() ? p.emote : null
   }));
   io.to(ROOM).emit("snapshot", { players: snap });
 }, 1000 / TICK_HZ);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Byzas Agora listening on :${PORT}`));
+server.listen(PORT, () => console.log(`Byzas Agora listening on :${PORT} (SELF_URL: ${SELF_URL || "-"})`));
