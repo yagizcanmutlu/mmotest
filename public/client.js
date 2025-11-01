@@ -32,6 +32,12 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const PLAYER_RADIUS = 0.45;
   const COLLISION_ENABLED = true;            // İstersen hızlı teşhis için false yap
 
+  const DEBUG_COLLIDERS = true;            // Geçici: true yapıp görünmez duvarları gör
+  const MAX_COLLIDER_RADIUS = 12;           // Güvenlik sınırı (m)
+  const colliderDebug = new THREE.Group();  // Debug halkaları
+  scene.add(colliderDebug);
+  
+
   // === GROUND CONFIG ===
   const GROUND_MODE = "custom"; // "custom" | "mars"
   const GROUND_CUSTOM_URL  = "/textures/floor.webp";
@@ -251,6 +257,77 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   // ---- NPC yardımcıları ----
   const _spawnedNPC = new Set(); // url|name anahtarıyla dedup
 
+  function computeColliderInfo(root, padding = 0.30) {
+    // Bazı GLB'ler dev bir floor/shadow plane içeriyor; onları ele.
+    const THIN_Y = 0.08;
+    const IGNORE_NAMES = ["floor", "ground", "shadow", "plane", "grid"];
+
+    let minX=+Infinity, maxX=-Infinity, minZ=+Infinity, maxZ=-Infinity;
+    let usedAny = false;
+
+    root.updateMatrixWorld(true);
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      const name = (o.name || "").toLowerCase();
+      if (IGNORE_NAMES.some(s => name.includes(s))) return;
+
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      const bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+      const hY = bb.max.y - bb.min.y;
+
+      // İncecik ve devasa yüzeyler (yer kaplaması) → yok say
+      if (hY < THIN_Y && (bb.max.x - bb.min.x > 3 || bb.max.z - bb.min.z > 3)) return;
+
+      usedAny = true;
+      minX = Math.min(minX, bb.min.x);
+      maxX = Math.max(maxX, bb.max.x);
+      minZ = Math.min(minZ, bb.min.z);
+      maxZ = Math.max(maxZ, bb.max.z);
+    });
+
+    if (!usedAny) {
+      // Fallback: Tüm objeden tek seferde hesapla
+      const bb = new THREE.Box3().setFromObject(root);
+      const size = bb.getSize(new THREE.Vector3());
+      const cx = (bb.min.x + bb.max.x) * 0.5;
+      const cz = (bb.min.z + bb.max.z) * 0.5;
+      const r  = 0.5 * Math.hypot(size.x, size.z) + padding;
+      return { offX: cx - root.position.x, offZ: cz - root.position.z, r: Math.min(r, MAX_COLLIDER_RADIUS) };
+    }
+
+    const cx = (minX + maxX) * 0.5;
+    const cz = (minZ + maxZ) * 0.5;
+    const halfX = (maxX - minX) * 0.5;
+    const halfZ = (maxZ - minZ) * 0.5;
+    const r = Math.hypot(halfX, halfZ) + padding;
+
+    return { offX: cx - root.position.x, offZ: cz - root.position.z, r: Math.min(r, MAX_COLLIDER_RADIUS) };
+  }
+
+  // (İsteğe bağlı) debug halkası
+  function ensureDebugRing(forCollider) {
+    if (!DEBUG_COLLIDERS) return;
+    if (forCollider._ring) return;
+
+    const seg = 64, inner = forCollider.r - 0.05, outer = forCollider.r + 0.05;
+    const geo = new THREE.RingGeometry(inner, outer, seg);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff3a66, transparent: true, opacity: 0.45, depthWrite:false });
+    const ring = new THREE.Mesh(geo, mat);
+    ring.rotation.x = -Math.PI/2;
+    colliderDebug.add(ring);
+    forCollider._ring = ring;
+  }
+
+  function syncDebugRing(forCollider) {
+    if (!DEBUG_COLLIDERS || !forCollider._ring) return;
+    const cx = (forCollider.root?.position.x || 0) + (forCollider.offX || 0);
+    const cz = (forCollider.root?.position.z || 0) + (forCollider.offZ || 0);
+    forCollider._ring.position.set(cx, 0.02, cz);
+    forCollider._ring.geometry.dispose();
+    forCollider._ring.geometry = new THREE.RingGeometry(forCollider.r - 0.05, forCollider.r + 0.05, 64);
+  }
+
+
   function spawnNPC(url, {
     onPad = false,
     offset = { x:0, z:0 },
@@ -328,13 +405,14 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       npcRegistry.set(regKey, root);
 
       // ==== COLLIDER (XZ dairesel) ====
+      // ==== COLLIDER (XZ dairesel) ====
       if (collision) {
-        root.updateMatrixWorld(true);
-        const bb   = new THREE.Box3().setFromObject(root);
-        const size = bb.getSize(new THREE.Vector3());
-        const rXZ  = 0.5 * Math.hypot(size.x, size.z) + colliderPadding;
-        colliders.push({ key: regKey, root, r: rXZ, padding: colliderPadding });
+        const info = computeColliderInfo(root, colliderPadding);
+        const col = { key: regKey, root, r: info.r, padding: colliderPadding, offX: info.offX, offZ: info.offZ };
+        colliders.push(col);
+        ensureDebugRing(col);
       }
+
     }, undefined, (err) => {
       console.error('NPC yüklenemedi:', url, err);
     });
@@ -361,8 +439,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   // Çarpışma fonksiyonları
   function collidesAt(nx, nz){
     for (const c of colliders){
-      const cx = c.root ? c.root.position.x : c.x;
-      const cz = c.root ? c.root.position.z : c.z;
+      const cx = (c.root?.position.x ?? c.x) + (c.offX || 0);
+      const cz = (c.root?.position.z ?? c.z) + (c.offZ || 0);
       const rr = (c.r || 1) + PLAYER_RADIUS;
       const dx = nx - cx, dz = nz - cz;
       if (dx*dx + dz*dz < rr*rr) return true;
@@ -373,8 +451,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function pushOutFromColliders(pos){
     let px = pos.x, pz = pos.z;
     for (const c of colliders){
-      const cx = (c.root?.position.x ?? c.x);
-      const cz = (c.root?.position.z ?? c.z);
+      const cx = (c.root?.position.x ?? c.x) + (c.offX || 0);
+      const cz = (c.root?.position.z ?? c.z) + (c.offZ || 0);
       const rr = (c.r || 1) + PLAYER_RADIUS;
       const dx = px - cx, dz = pz - cz;
       const d2 = dx*dx + dz*dz;
@@ -387,6 +465,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
     pos.x = px; pos.z = pz;
   }
+
 
   // Kaydırmalı çözüm
   function resolveCollision(px, pz, nx, nz){
@@ -656,23 +735,27 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     if (!staticSpawned) {
       staticSpawned = true;
 
+      // 1) Neo Yogi — küçük bir tampon
       spawnNPC('/models/readyplayermale_cyberpunk.glb', {
         onPad: true,
         offset: { x: -7, z: -2 },
         targetHeight: 1.8,
         ry: Math.PI * 0.2,
-        name: 'Neo Yogi'
+        name: 'Neo Yogi',
+        colliderPadding: 0.15
       });
 
+      // 2) Agora Taxi — kontrollü yarıçap
       spawnNPC('/models/cyberpunk_car.glb', {
         onPad: true,
         offset: { x: 6, z: 1.5 },
         targetDiag: 4.2,
         ry: -Math.PI * 0.35,
-        name: 'Agora Taxi'
+        name: 'Agora Taxi',
+        colliderPadding: 0.20
       });
 
-      // Pyramid City — pad merkezine göre
+      // 3) Pyramid City — SADECE dekor, çarpışma KAPALI (büyük görünmez duvar ihtimalini bitirir)
       {
         const c = getAnyPadCenter();
         spawnNPC('/models/futuristic_pyramid_cityscape.glb', {
@@ -682,19 +765,23 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
           y: 0.0,
           ry: -Math.PI * 5,
           targetDiag: 5,
-          name: 'Pyramid City'
+          name: 'Pyramid City',
+          collision: false         // <— önemli
         });
       }
 
-      // Sci-Fi modular stack
+      // 4) Stack (hangar) — çarpışma AÇIK + elle yarıçap (gerekirse büyüt/küçült)
       spawnNPC('/models/sci-fi_modular_stack_asset.glb', {
         onPad: true,
         offset: { x: -12, z: 9 },
         targetDiag: 14,
         y: 0.0,
         ry: Math.PI * 0.1,
-        name: 'Stack Module'
+        name: 'Stack Module',
+        colliderPadding: 0.25,
+        // colliderRadius: 6.0   // istersen şimdilik aç ve değeri deneyerek oturt
       });
+
 
       // Örnek dinamik paket kayıtları
       // window.AGORALazy.register({ name:'props-zone-1', x: padPos.x + 28, z: padPos.z, url:'/models/props_pack.glb', dist:30, unload:true });
@@ -816,6 +903,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
 
   function tick(now){
+    for (const c of colliders) syncDebugRing(c);
     // FPS hesabı (EWMA)
     const _frameDt = now - _fpsLast; _fpsLast = now;
     const _instFps = 1000 / Math.max(1, _frameDt);
