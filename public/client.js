@@ -6,6 +6,12 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 /* global io */
 (() => {
   // UI
+    // ⛔ client.js birden fazla kez çalışıyorsa hemen çık
+  if (window.__AGORA_CLIENT_RUNNING__) {
+    console.warn("[Agora] client already running — aborting duplicate init");
+    return;
+  }
+  window.__AGORA_CLIENT_RUNNING__ = true;
   const root     = document.getElementById("root");
   const cta      = document.getElementById("cta");
   const playBtn  = document.getElementById("playBtn");
@@ -236,6 +242,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return new THREE.Vector3(0,0,0);
   }
 
+  const _spawnedNPC = new Set(); // url|name anahtarıyla dedup
+  
   function spawnNPC(url, {
     onPad = false,
     offset = { x:0, z:0 },
@@ -244,6 +252,18 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     x=0, z=0, y=0, ry=0, scale=null, name=null
   } = {}) {
     if (!gltfLoader) { console.warn('GLTFLoader yok, NPC yüklenemez:', url); return; }
+// 🔒 Aynı (url+name) için ikinci kez yükleme yapma
+    const key = `${url}|${name||""}`;
+    if (_spawnedNPC.has(key)) {
+      // Varsa sadece konumu güncelle (pad’e sabitleme senaryosu)
+      const padPos = onPad ? getAnyPadCenter() : null;
+      if (padPos) {
+        // İstersen burada sahnedeki mevcut root'u konumlandırabilirsin (gerekli değilse boş bırak)
+      }
+      return;
+    }
+    _spawnedNPC.add(key);
+    
     gltfLoader.load(url, (gltf) => {
       const model = gltf.scene || gltf.scenes?.[0];
       if (!model) { console.warn('GLB sahnesi boş:', url); return; }
@@ -898,5 +918,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function sendChat(){ const t = chatText?.value.trim(); if (!t) return; socket.emit("chat:send", { text:t }); chatText.value=""; }
   chatSend?.addEventListener("click", sendChat);
   chatText?.addEventListener("keydown", (e)=>{ if (e.key === "Enter") sendChat(); });
+
+  window.addEventListener("beforeunload", () => {
+    try { socket?.close(); } catch(e) {}
+  });
+  
 
 })();
