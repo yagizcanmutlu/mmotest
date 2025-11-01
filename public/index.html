@@ -38,22 +38,6 @@
     #stick{position:absolute;left:50%;top:50%;width:56px;height:56px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(80,180,255,.35);border:1px solid #2a4}
     #lookpad{position:absolute;right:0;bottom:0;width:40vw;height:55vh;z-index:11;touch-action:none}
 
-    .seg{display:inline-grid;grid-auto-flow:column;gap:6px;background:rgba(8,10,20,.6);border:1px solid #234;border-radius:12px;padding:6px;user-select:none}
-    .seg input{display:none}
-    .seg label{padding:8px 12px;border-radius:8px;cursor:pointer;color:#cfe;background:transparent;border:1px solid transparent;font-weight:700;letter-spacing:.2px}
-    .seg input:checked + label{background:#1a2738;border-color:#29549b;color:#e7f0ff;box-shadow:0 0 0 2px rgba(41,84,155,.25) inset}
-
-    #hud-top-right{position:fixed;top:12px;right:14px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;z-index:99999;pointer-events:none}
-    #hud-top-right>div{pointer-events:auto;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);color:#d9ecff;font:600 14px/1.2 system-ui,-apple-system,"Segoe UI",Roboto,Arial;padding:6px 10px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.4)}
-    #hudGender.-male{color:#9ad1ff}
-    #hudGender.-female{color:#ff77aa}
-
-    .gender-select{display:flex;gap:12px;margin-top:6px;background:rgba(0,0,0,.35);padding:8px 10px;border-radius:10px}
-    .gender-select label{display:flex;align-items:center;gap:6px;color:#e7f4ff;font-weight:600;cursor:pointer}
-    .gender-select input{transform:scale(1.05)}
-
-    @media (max-width:900px){.chat{width:260px}.chat-log{height:120px}}
-
     /* NFT modal */
     .nft-modal{position:fixed;inset:0;z-index:9998;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
     .nft-card{width:min(920px,92vw);max-height:86vh;overflow:auto;background:rgba(8,10,20,.96);border:1px solid #234;border-radius:16px;padding:14px;color:#d9ecff}
@@ -87,10 +71,6 @@
       <button class="help-btn" id="helpBtn">?</button>
     </div>
 
-    <div id="hud-top-right">
-      <div id="hudGender" class="-female">♀ Kadın</div>
-    </div>
-
     <div class="help" id="helpBox">
       <h3>Kontroller</h3>
       <ul>
@@ -103,6 +83,7 @@
       <small>Mobilde: Sol joystick hareket, sağ alan sürükle bakış.</small>
     </div>
 
+    <!-- CTA / Join -->
     <div class="cta" id="cta">
       <div class="card">
         <h1>Agora'ya katıl</h1>
@@ -117,25 +98,13 @@
         </div>
 
         <input id="nameInput" placeholder="Görünen adın (ör. Yogi)" maxlength="20" />
-        <div class="gender-select">
-          <label><input type="radio" name="gender" value="female" checked />♀ Kadın</label>
-          <label><input type="radio" name="gender" value="male" />♂ Erkek</label>
-        </div>
-
-        <div class="seg" style="margin-top:6px">
-          <input type="radio" id="avatar1" name="avatar" value="1" checked />
-          <label for="avatar1">Avatar 1</label>
-          <input type="radio" id="avatar2" name="avatar" value="2" />
-          <label for="avatar2">Avatar 2</label>
-          <input type="radio" id="avatar3" name="avatar" value="3" />
-          <label for="avatar3">Avatar 3</label>
-        </div>
 
         <button id="playBtn" type="button">Giriş</button>
         <button id="openNftSelect" class="btn" type="button">NFT Seç</button>
       </div>
     </div>
 
+    <!-- Chat -->
     <div class="chat">
       <div class="chat-log" id="chatLog"></div>
       <div class="chat-input">
@@ -176,7 +145,6 @@
 
   <!-- === Güvenli NFT akışı (BACKEND üstünden) — client.js'ten ÖNCE === -->
   <script>
-    // Backendi farklı bir domainden çağıracaksan doldur:
     // const BACKEND_BASE = "https://mmotest-5uut.onrender.com";
     const BACKEND_BASE = ""; // aynı origin
 
@@ -201,21 +169,11 @@
     const openNftBtn = document.getElementById('openNftSelect');
 
     const nameInput  = document.getElementById('nameInput');
-    const hudGender  = document.getElementById('hudGender');
-    const genderRadios = Array.from(document.querySelectorAll('input[name="gender"]'));
 
     const chosenMini = document.getElementById('chosenNftMini');
     const chosenImg  = document.getElementById('chosenNftImg');
     const chosenName = document.getElementById('chosenNftName');
     const chosenStats= document.getElementById('chosenNftStats');
-
-    // Gender HUD sync
-    function syncHudGender(){
-      const g = (genderRadios.find(r=>r.checked)?.value)||'female';
-      hudGender.textContent = g==='male' ? '♂ Erkek' : '♀ Kadın';
-      hudGender.className = g==='male' ? '-male' : '-female';
-    }
-    genderRadios.forEach(r => r.addEventListener('change', syncHudGender));
 
     const mask = (addr)=> addr ? (addr.slice(0,4)+'…'+addr.slice(-4)) : '';
 
@@ -228,21 +186,20 @@
       if(!res.ok){ console.error('NFT fetch hata', res.status); return []; }
       const data = await res.json();
 
-      // Esnek map: {nfts:[...]} veya Airtable {records:[{fields:...}]}
       if (Array.isArray(data.nfts)) return data.nfts;
 
       if (Array.isArray(data.records)) {
         return data.records.map(r => {
           const f = r.fields || {};
+          const img = Array.isArray(f.image) && f.image.length ? (f.image[0].url || f.image[0]) : (f.image_url || f.image);
           return {
             id: r.id,
-            name: f.nft_name_list || 'Unnamed NFT',
-            imageUrl: f.image || 'https://placehold.co/300x300/111/AAA?text=NFT',
-            atk: f.ap || 50,
-            def: f.dp || 30,
-            level: f.level || 1,
-            crit: f.crit_chance || 0.2,
-            gender: (f.gender || '').toLowerCase()
+            name: f.nft_name_list || f.name || 'Unnamed NFT',
+            imageUrl: img || 'https://placehold.co/300x300/111/AAA?text=NFT',
+            atk: f.ap ?? f.atk ?? 50,
+            def: f.dp ?? f.def ?? 30,
+            level: f.level ?? 1,
+            crit: f.crit_chance ?? 0.2
           };
         });
       }
@@ -277,26 +234,19 @@
 
     function applyChosenNFT(){
       if(!selectedNFT) return;
-      nameInput.value = selectedNFT.name;
-      if(selectedNFT.gender==='male' || selectedNFT.gender==='m'){
-        genderRadios.find(r=>r.value==='male').checked = true;
-      } else if(selectedNFT.gender==='female' || selectedNFT.gender==='f'){
-        genderRadios.find(r=>r.value==='female').checked = true;
-      }
-      syncHudGender();
+      nameInput.value = selectedNFT.name || nameInput.value;
       chosenMini.style.display = 'flex';
-      chosenImg.src   = selectedNFT.imageUrl;
-      chosenName.textContent = selectedNFT.name;
-      chosenStats.textContent = `LVL ${selectedNFT.level} • ATK ${selectedNFT.atk} • DEF ${selectedNFT.def}`;
+      chosenImg.src   = selectedNFT.imageUrl || '';
+      chosenName.textContent = selectedNFT.name || 'NFT';
+      chosenStats.textContent = `LVL ${selectedNFT.level ?? 1} • ATK ${selectedNFT.atk ?? 0} • DEF ${selectedNFT.def ?? 0}`;
     }
 
-    // Giriş → client.js'e payload ver (o, window.agoraInjectedPayload'ı okuyacak)
+    // Giriş → client.js'e payload ver
     document.getElementById('playBtn').addEventListener('click', () => {
       const payload = {
         wallet: walletFromHost,
         nft: selectedNFT || null,
-        playerName: nameInput.value.trim() || (selectedNFT ? selectedNFT.name : 'Player'),
-        gender: genderRadios.find(r=>r.checked)?.value || 'female'
+        playerName: nameInput.value.trim() || (selectedNFT ? selectedNFT.name : 'Player')
       };
       window.agoraInjectedPayload = payload;
       window.dispatchEvent(new CustomEvent('agoraInit', { detail: payload }));
@@ -320,10 +270,18 @@
         walletFromHost = (msg.address||'').trim();
         walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
         allWalletNFTs = await fetchWalletNFTs(walletFromHost);
-        if(allWalletNFTs.length === 1){ selectedNFT = allWalletNFTs[0]; applyChosenNFT(); }
-        else { renderNFTGrid(allWalletNFTs); openModal(); }
+        if(allWalletNFTs.length === 1){
+          selectedNFT = allWalletNFTs[0];
+          applyChosenNFT();
+        } else {
+          renderNFTGrid(allWalletNFTs);
+          openModal();
+        }
       }
-      if(msg.type === 'selectedNFT' && msg.payload){ selectedNFT = msg.payload; applyChosenNFT(); }
+      if(msg.type === 'selectedNFT' && msg.payload){
+        selectedNFT = msg.payload;
+        applyChosenNFT();
+      }
     });
 
     // Fallback: URL ?wallet= adresinden al (yerel test için)
@@ -334,33 +292,34 @@
         walletFromHost = w.trim();
         walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
         allWalletNFTs = await fetchWalletNFTs(walletFromHost);
-        if(allWalletNFTs.length === 1){ selectedNFT = allWalletNFTs[0]; applyChosenNFT(); }
+        if(allWalletNFTs.length === 1){
+          selectedNFT = allWalletNFTs[0];
+          applyChosenNFT();
+        }
       }
-      syncHudGender();
     })();
   </script>
 
-  <script>
-  const socket = io("/", {
-    transports: ["websocket", "polling"],
-    upgrade: true,
-    timeout: 20000,
-    reconnection: true,
-    reconnectionAttempts: 10,
-    reconnectionDelay: 800,
-    withCredentials: true
-  });
-
-  socket.on("connect_error", (err) => {
-    // WebSocket upgrade hatalarını sessize al
-    if (String(err?.message || "").toLowerCase().includes("websocket")) return;
-    console.warn("socket connect_error", err);
-  });
-</script>
-
-
-  <!-- Sıra önemli: önce socket.io, sonra module client -->
+  <!-- Sıra önemli: önce socket.io, sonra socket başlat, en sonda client.js -->
   <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io("/", {
+      transports: ["websocket", "polling"],
+      upgrade: true,
+      timeout: 20000,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 800,
+      withCredentials: true
+    });
+
+    socket.on("connect_error", (err) => {
+      // WebSocket upgrade hatalarını sessize al
+      if (String(err?.message || "").toLowerCase().includes("websocket")) return;
+      console.warn("socket connect_error", err);
+    });
+    // window.socket = socket; // gerekirse globalleştir
+  </script>
   <script type="module" src="/client.js"></script>
 </body>
 </html>
