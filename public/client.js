@@ -333,9 +333,9 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       x: c.x + 32,   // konumu kendine göre ayarla
       z: c.z - 18,
       y: 0,          // z-fighting olursa 0.05 yap
-      ry: -Math.PI * 0.20,
+      ry: -Math.PI * 5,
       // model büyükse/ küçükse tek yerden ölçeklemek için targetDiag kullan:
-      targetDiag: 20,     // "yaklaşık" diyagonal (m). Göz kararı ayarlarsın.
+      targetDiag: 5,     // "yaklaşık" diyagonal (m). Göz kararı ayarlarsın.
       // ya da boy kontrolü: targetHeight: 30,
       name: 'Pyramid City'
     });
