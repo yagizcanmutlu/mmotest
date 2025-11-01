@@ -493,7 +493,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const moonTex = new THREE.TextureLoader().load("https://happy358.github.io/Images/textures/lunar_color.jpg", t=>{ t.colorSpace = THREE.SRGBColorSpace; });
   const PLANET_SIZE_MUL = 1.8;
       // --- Ayarlar (PLANETLER) ---
-  const PLANET_DIST_MUL = 2.50;   // Uzaklık çarpanı (x,z'i ölçekler)
+  const PLANET_DIST_MUL = 3.33;   // Uzaklık çarpanı (x,z'i ölçekler)
   const PLANET_ALTITUDE = 6.0;    // Gezegenleri pad’den yukarı kaldırma (metre)
 
 
