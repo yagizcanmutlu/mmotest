@@ -1,4 +1,4 @@
-// server.js — Byzas Agora (Planets + Stylized Avatars)
+// server.js — Byzas Agora (Planets + Stylized Avatars)//
 const express = require("express");
 const http = require("http");
 const path = require("path");
