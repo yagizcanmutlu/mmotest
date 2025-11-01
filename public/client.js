@@ -587,16 +587,16 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
 
   function addHotspotDisk(name, x, z, r){
-    const prev = _spaceBaseHotspotMeshes.get(name);
-    if (prev) {
-      scene.remove(prev);
-      prev.traverse(o=>{ if (o.isMesh){ o.geometry.dispose(); o.material.dispose?.(); }});
-    }
-    const grp = _createSpaceBaseDiscMesh(r);
-    grp.position.set(x, 0, z);
-    scene.add(grp);
-    _spaceBaseHotspotMeshes.set(name, grp);
+    // hep logic tutalım ama MESH eklemeyelim
     hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
+
+    if (!SHOW_PADS) return; // <— diskleri KAPAT
+
+    // (Aşağıdaki eski disk çizimlerini tamamen silebilirsin)
+    // const grp = _createSpaceBaseDiscMesh(r);
+    // grp.position.set(x, 0, z);
+    // scene.add(grp);
+    // _spaceBaseHotspotMeshes.set(name, grp);
   }
 
   const planetMeshes = [];
