@@ -34,8 +34,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   const DEBUG_COLLIDERS = true;            // Geçici: true yapıp görünmez duvarları gör
   const MAX_COLLIDER_RADIUS = 12;           // Güvenlik sınırı (m)
-  const colliderDebug = new THREE.Group();  // Debug halkaları
-  scene.add(colliderDebug);
+  // sahne hazır olmadan THREE.Group oluşturma/ekleme yapma
+  let colliderDebug = null;
   
 
   // === GROUND CONFIG ===
@@ -66,6 +66,9 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x090a14, 20, 120);
+    // debug grubunu şimdi yarat ve sahneye ekle
+  colliderDebug = new THREE.Group();
+  scene.add(colliderDebug);
 
   const camera = new THREE.PerspectiveCamera(75, root.clientWidth / root.clientHeight, 0.1, 600);
   camera.position.set(0, 1.6, 4);
