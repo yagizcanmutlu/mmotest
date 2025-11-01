@@ -1,23 +1,32 @@
-// server.js — Byzas Agora (Planets + Stylized Avatars)
+// server.js — Byzas Agora (CommonJS, tek tip)
+// Not: "path" ismi başka yerlerle çakışmasın diye nodePath kullandım.
 const express = require("express");
 const http = require("http");
-const path = require("path");
+const nodePath = require("path");
+const compression = require("compression");
 const { Server } = require("socket.io");
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET","POST"] }, // prototip: açık
-});
+app.disable("x-powered-by");
+app.use(compression());
 
-const PUBLIC_DIR = path.join(__dirname, "public");
-app.use(express.static(PUBLIC_DIR));
-app.get("/", (_req, res) => res.sendFile(path.join(PUBLIC_DIR, "index.html")));
+// --- Statik servis (public altında klasör yapısı)
+const PUBLIC_DIR = nodePath.join(__dirname, "public");
+app.use("/vendor",   express.static(nodePath.join(PUBLIC_DIR, "vendor"),   { maxAge: "365d", immutable: true }));
+app.use("/models",   express.static(nodePath.join(PUBLIC_DIR, "models"),   { maxAge: "30d",  immutable: true }));
+app.use("/textures", express.static(nodePath.join(PUBLIC_DIR, "textures"), { maxAge: "30d",  immutable: true }));
+app.use(express.static(PUBLIC_DIR, { maxAge: "7d" }));
+
+app.get("/", (_req, res) => res.sendFile(nodePath.join(PUBLIC_DIR, "index.html")));
+
+// ---- Socket.IO
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*", methods: ["GET","POST"] } });
 
 const ROOM = "agora";
 const TICK_HZ = 10;
 
-// --- Gezegenler (isim, renk, sahne yarıçapı, tetik yarıçapı) ---
+// --- Gezegenler
 const PLANETS = [
   { name: "Astra",  color: 0xffcf5a, x:  10, z:  -5, radius: 2.2, r: 3.0 },
   { name: "Nyx",    color: 0x8a6cff, x: -12, z:  -8, radius: 2.8, r: 3.5 },
@@ -25,20 +34,15 @@ const PLANETS = [
   { name: "Cinder", color: 0xff6b6b, x:  -9, z:   9, radius: 2.4, r: 3.2 }
 ];
 
-// Hotspot’ları gezegenlerden üret + bir “Totem” bırak
 const hotspots = [
   { name: "Totem", x: 0, z: 0, r: 3 },
   ...PLANETS.map(p => ({ name: `Planet:${p.name}`, x: p.x, z: p.z, r: p.r }))
 ];
 
-function randSpawn() {
-  return { x: (Math.random()-0.5)*8, y:0, z:(Math.random()-0.5)*8 };
-}
-function todayKey(){
-  const d=new Date(); return `${d.getUTCFullYear()}-${d.getUTCMonth()+1}-${d.getUTCDate()}`;
-}
+function randSpawn() { return { x:(Math.random()-0.5)*8, y:0, z:(Math.random()-0.5)*8 }; }
+function todayKey(){ const d=new Date(); return `${d.getUTCFullYear()}-${d.getUTCMonth()+1}-${d.getUTCDate()}`; }
 
-const players = new Map(); // socketId -> player
+const players = new Map();
 
 io.on("connection", (socket) => {
   const spawn = randSpawn();
@@ -56,7 +60,10 @@ io.on("connection", (socket) => {
 
   // Günlük +10
   const key = todayKey();
-  if (you.dailyKey !== key) { you.dailyKey = key; you.points += 10; socket.emit("points:update", { total: you.points, delta:+10, reason:"Daily check-in" }); }
+  if (you.dailyKey !== key) {
+    you.dailyKey = key; you.points += 10;
+    socket.emit("points:update", { total: you.points, delta:+10, reason:"Daily check-in" });
+  }
 
   // Bootstrap
   socket.emit("bootstrap", {
@@ -65,10 +72,12 @@ io.on("connection", (socket) => {
       .filter(([id]) => id !== socket.id)
       .map(([id,p]) => ({ id, x:p.x, y:p.y, z:p.z, ry:p.ry, name:p.name, rank:p.rank, emote:p.emote })),
     hotspots,
-    planets: PLANETS // istemci gezegenleri sahneye çizecek
+    planets: PLANETS
   });
 
-  socket.to(ROOM).emit("player-joined", { id: you.id, x:you.x, y:you.y, z:you.z, ry:you.ry, name:you.name, rank:you.rank });
+  socket.to(ROOM).emit("player-joined", {
+    id: you.id, x:you.x, y:you.y, z:you.z, ry:you.ry, name:you.name, rank:you.rank
+  });
 
   socket.on("state", (data) => {
     const p = players.get(socket.id); if (!p) return;
@@ -84,7 +93,9 @@ io.on("connection", (socket) => {
       const clean = name.trim().slice(0,20) || p.name; p.name = clean;
       io.to(ROOM).emit("player:name", { id: p.id, name: p.name });
     }
-    if (typeof rank === "string") { p.rank = rank; io.to(ROOM).emit("player:rank", { id:p.id, rank:p.rank }); }
+    if (typeof rank === "string") {
+      p.rank = rank; io.to(ROOM).emit("player:rank", { id:p.id, rank:p.rank });
+    }
   });
 
   socket.on("chat:send", ({ text }) => {
@@ -132,7 +143,7 @@ io.on("connection", (socket) => {
     const p = players.get(socket.id); if (!p) return;
     const hs = hotspots.find(h => h.name === name); if (!hs) return;
     const d2 = (p.x-hs.x)**2 + (p.z-hs.z)**2;
-    if (d2 > (hs.r+0.8)**2) return; // doğrulama
+    if (d2 > (hs.r+0.8)**2) return;
     if (p.visited[name]) return;
     p.visited[name] = true; p.points += 5;
     io.to(p.id).emit("points:update", { total:p.points, delta:+5, reason:`${name} bölgesini keşfettin` });
@@ -145,6 +156,7 @@ io.on("connection", (socket) => {
   });
 });
 
+// Snapshot tick
 setInterval(() => {
   const snap = Array.from(players.entries()).map(([id,p])=>({
     id, x:p.x, y:p.y, z:p.z, ry:p.ry, name:p.name, rank:p.rank,
@@ -153,5 +165,9 @@ setInterval(() => {
   io.to(ROOM).emit("snapshot", { players: snap });
 }, 1000 / TICK_HZ);
 
+// Health
+app.get("/healthz", (_req, res) => res.type("text").send("ok"));
+
+// Port
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Byzas Agora listening on :${PORT}`));
+server.listen(PORT, () => console.log(`✅ Byzas Agora listening on :${PORT}`));
