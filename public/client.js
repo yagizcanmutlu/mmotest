@@ -32,7 +32,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   // ⬇ zeminin altındaki artefaktları kes
-  renderer.clippingPlanes = [ new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.0) ];
+  // renderer.clippingPlanes = [ new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.0) ];
+  renderer.clippingPlanes = [];  // kapalı
 
   root.appendChild(renderer.domElement);
 
