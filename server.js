@@ -48,7 +48,8 @@ app.use((req, _res, next) => {
   next();
 });
 app.use(cors(corsConfig));
-app.options("*", cors(corsConfig)); // Preflight OPTIONS
+app.options(/.*/, cors(corsConfig)); // Express 5 uyumlu: regex ile tüm OPTIONS'ları ele al
+
 
 app.use(express.json());
 
