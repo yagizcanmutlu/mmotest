@@ -394,6 +394,26 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return false;
   }
 
+  function pushOutFromColliders(pos){
+    let px = pos.x, pz = pos.z;
+    for (const c of colliders){
+      const cx = (c.root?.position.x ?? c.x);
+      const cz = (c.root?.position.z ?? c.z);
+      const rr = (c.r || 1) + PLAYER_RADIUS;
+      const dx = px - cx, dz = pz - cz;
+      const d2 = dx*dx + dz*dz;
+      if (d2 < rr*rr) {
+        const d = Math.sqrt(d2) || 1e-6;
+        // İçeriden sınırın tam dışına it
+        const k = (rr - d) / d + 1e-3;
+        px += dx * k;
+        pz += dz * k;
+      }
+    }
+    pos.x = px; pos.z = pz;
+  }
+    
+
   // Kaydırmalı çözüm: önce tam, sonra X ya da Z ekseninde kaydırarak dener
   function resolveCollision(px, pz, nx, nz){
     if (!collidesAt(nx, nz)) return { x:nx, z:nz };
@@ -945,21 +965,21 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     const mag = Math.hypot(strafe,forward) || 1;
     const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (mag>1 ? 1/mag : 1);
 
-    if (forward || strafe) {
-      const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
-      const dx = forward * sin - strafe * cos;
-      const dz = forward * cos + strafe * sin;
+  if (forward || strafe) {
+    const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
+    const dx = forward * sin - strafe * cos;
+    const dz = forward * cos + strafe * sin;
 
-      const px = local.parts.group.position.x;
-      const pz = local.parts.group.position.z;
+    const px = local.parts.group.position.x;
+    const pz = local.parts.group.position.z;
 
-      const nx = px + dx * spd * dt;
-      const nz = pz + dz * spd * dt;
+    const nx = px + dx * spd * dt;
+    const nz = pz + dz * spd * dt;
 
-      const solved = resolveCollision(px, pz, nx, nz);
-      local.parts.group.position.x = solved.x;
-      local.parts.group.position.z = solved.z;
-    }
+    const solved = resolveCollision(px, pz, nx, nz);
+    local.parts.group.position.x = solved.x;
+    local.parts.group.position.z = solved.z;
+  }
 
     local.parts.group.rotation.y = local.yaw;
 
