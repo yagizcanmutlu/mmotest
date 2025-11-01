@@ -44,6 +44,22 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     hudGender.classList.toggle('-female', !male);
   }
 
+  function skinnedWorldBBox(root) {
+    const box = new THREE.Box3();
+    root.updateMatrixWorld(true);
+    root.traverse(obj => {
+      if (!obj.isMesh) return;
+      const g = obj.geometry;
+      if (!g) return;
+      if (!g.boundingBox) g.computeBoundingBox();
+      const bb = g.boundingBox.clone();
+      bb.applyMatrix4(obj.matrixWorld);
+      box.union(bb);
+    });
+    return box;
+  }
+
+
   const socket = io();
 
   // ---------- Cihaz ----------
@@ -184,30 +200,56 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
 
   // ---------- Karakter kurucuları ----------
-  function buildPlayerFromGLB(name = "Player"){
+  function buildPlayerFromGLB(name = "Player") {
+    // baseCharGLB yoksa boş grup dön (çökmemek için)
     if (!baseCharGLB) {
       const dummy = new THREE.Group();
       const tag = makeNameSprite(name);
       dummy.add(tag);
-      return { group: dummy, tag, isGLB:true, torso:{material:{color:new THREE.Color(0xffffff)}}, armL:null, armR:null, legL:null, legR:null };
+      return {
+        group: dummy, tag,
+        isGLB: true,
+        torso: { material: { color: new THREE.Color(0xffffff) } },
+        armL:null, armR:null, legL:null, legR:null
+      };
     }
+
+    // Kökte tek grup: hareket/rotasyon bununla yapılacak
     const holder = new THREE.Group();
+    holder.name = 'LocalAvatarRoot';
+    holder.userData.isLocalAvatar = true;
+
+    // GLB klonu
     const clone = baseCharGLB.clone(true);
     enableShadows(clone);
+    holder.add(clone);
+    holder.updateMatrixWorld(true);
 
-    // boy normalize ~1.75m ve zemine oturt
-    const bbox = new THREE.Box3().setFromObject(clone);
-    const height = Math.max(0.0001, bbox.max.y - bbox.min.y);
+    // Boyu normalize et + ayak tabanını y=0’a sabitle
+    const bb1 = skinnedWorldBBox(clone);
+    const height = Math.max(0.001, bb1.max.y - bb1.min.y);
     const scale = 1.75 / height;
     clone.scale.setScalar(scale);
-    placeOnGround(clone, 0);
+    holder.updateMatrixWorld(true);
+    const bb2 = skinnedWorldBBox(clone);
+    const feetY = bb2.min.y;
+    // Clone’u, holder localinde ayaklar 0’a oturacak şekilde yukarı it
+    clone.position.y += -feetY;
 
-    holder.add(clone);
+    // İsim etiketi
     const tag = makeNameSprite(name);
-    tag.position.y = 2.15;
+    tag.position.y = 2.15; // sabit güvenli yükseklik
     holder.add(tag);
-    return { group: holder, tag, isGLB:true, torso:{material:{color:new THREE.Color(0xffffff)}}, armL:null, armR:null, legL:null, legR:null };
+
+    return {
+      group: holder,
+      tag,
+      isGLB: true,
+      torso: { material: { color: new THREE.Color(0xffffff) } },
+      armL:null, armR:null, legL:null, legR:null
+    };
   }
+
 
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff, opts={}){
     const scale = opts.scale ?? 0.20;
@@ -300,21 +342,33 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
 
   // --- Avatar swap ---
-  function swapLocalToGLB(){
+  function swapLocalToGLB() {
     if (!baseCharGLB) { wantMaleGLB = true; return; }
     if (local.parts?.isGLB) return;
 
+    // Eski grubun poz/rot’unu al
     const pos = local.parts.group.position.clone();
     const yaw = local.parts.group.rotation.y;
+
+    // Eskiyi sök
     scene.remove(local.parts.group);
     disposeGroup(local.parts.group);
 
+    // GLB’li yeni grubu kur
     const built = buildPlayerFromGLB(local.name || "You");
     local.parts = built;
-    scene.add(built.group);
     built.group.position.copy(pos);
     built.group.rotation.y = yaw;
+    scene.add(built.group);
+
     if (local.name) updateNameTag(local, local.name);
+
+    // Güvenlik: sahnede yanlışlıkla kalmış eski GLB klonlarını temizle
+    const trash = [];
+    scene.traverse(o => {
+      if (o !== built.group && o.userData && o.userData.isLocalAvatar) trash.push(o);
+    });
+    trash.forEach(o => scene.remove(o));
   }
 
   function swapLocalAvatar(gender='female'){
