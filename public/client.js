@@ -26,6 +26,53 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
 
+    // === AGORA NFT entegrasyonu (index.html -> client.js) ===
+  const hudGenderEl = document.getElementById('hudGender');
+
+  function setHudGender(g) {
+    if (!hudGenderEl) return;
+    hudGenderEl.className = '';               // class reset
+    if ((g||'').toLowerCase().startsWith('m')) {
+      hudGenderEl.textContent = '♂ Erkek';
+      hudGenderEl.classList.add('-male');
+    } else {
+      hudGenderEl.textContent = '♀ Kadın';
+      hudGenderEl.classList.add('-female');
+    }
+  }
+
+  function startGameFromPayload({ playerName, gender='female', wallet=null, nft=null } = {}) {
+    // 1) Yerelde isim & cinsiyet
+    const name = (playerName || '').trim() || 'Player';
+    local.gender = gender;
+    if (name) updateNameTag(local, name);
+
+    // 2) HUD güncelle
+    setHudGender(gender);
+
+    // 3) Server’a profil ve join bilgisi gönder
+    // (Server tanımı destekliyorsa wallet/nft alanlarını kullanır; bilmiyorsa yok sayar.)
+    socket.emit("profile:update", { name, gender, wallet, nft });
+    socket.emit("join",           { name, gender, wallet, nft });
+
+    // 4) UI geçişleri
+    if (cta) cta.style.display = "none";
+    // pointer lock: masaüstünde konfor için burada alıyoruz
+    try { renderer.domElement.requestPointerLock(); } catch(e){}
+
+    // 5) İleride ihtiyaç olursa seçilen NFT’yi yerelde tut
+    window.__AGORA_SELECTED_NFT__ = nft || null;
+  }
+
+  // index.html, play butonunda bu olayı dispatch ediyor
+  window.addEventListener('agoraInit', (e) => {
+    const payload = e?.detail || {};
+    // Payload’ı globalde de cache’le (fallback davranışı için)
+    window.agoraInjectedPayload = payload;
+    startGameFromPayload(payload);
+  });
+
+
   // === Registry & Collisions ===
   const npcRegistry = new Map();             // key -> THREE.Group (root)
   const colliders  = [];                     // { key, root, r, padding }
@@ -588,14 +635,23 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     keys.delete(e.code);
   }, { passive:false });
 
-  // Pointer-lock look (desktop)
   if (playBtn) playBtn.addEventListener("click", () => {
+    // NFT entegrasyonu aktifse (index.html set edip agoraInit dispatch ettiyse)
+    if (window.agoraInjectedPayload) return; // join işini agoraInit handler yaptı
+
+    // ---- Fallback (NFT seçimi yoksa eski yol) ----
     const desired = (nameInput?.value||"").trim().slice(0,20);
     if (desired) { local.name = desired; if (local.tag) updateNameTag(local, desired); }
-    socket.emit("profile:update", { name: desired || undefined, gender: 'female' });
-    socket.emit("join", { name: desired || undefined, gender: 'female' });
+    // Varsayılan cinsiyet: formdaki radio’yu okumaya çalış, yoksa female
+    const formGenderEl = document.querySelector('input[name="gender"]:checked');
+    const fallbackGender = (formGenderEl?.value || 'female');
+    setHudGender(fallbackGender);
+
+    socket.emit("profile:update", { name: desired || undefined, gender: fallbackGender });
+    socket.emit("join",           { name: desired || undefined, gender: fallbackGender });
+
     if (cta) cta.style.display = "none";
-    renderer.domElement.requestPointerLock();
+    try { renderer.domElement.requestPointerLock(); } catch(e){}
   });
 
   document.addEventListener("pointerlockchange", () => {

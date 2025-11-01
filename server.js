@@ -1,23 +1,99 @@
-// server.js — Byzas Agora (Planets + Stylized Avatars)
+// server.js — Byzas Agora (Planets + Stylized Avatars + NFT API)
 const express = require("express");
 const http = require("http");
 const path = require("path");
+const cors = require("cors");
 const { Server } = require("socket.io");
+
+// Node 18+ global fetch var. Daha eski Node kullanıyorsan package.json'a node-fetch ekle.
+if (typeof fetch === "undefined") {
+  global.fetch = (...args) =>
+    import("node-fetch").then(({ default: f }) => f(...args));
+}
 
 const app = express();
 const server = http.createServer(app);
+
+// ——— CORS ———
+const ALLOWED_ORIGINS = [
+  "https://cryptoyogi.webflow.io",
+  "https://www.cryptoyogi.com",
+  "https://www.cryptoyogi.world",
+  "https://yagizcanmutlu.github.io" // gerekirse kalsın
+];
+
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
+app.use(express.json());
+
+// ——— Socket.io ———
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET","POST"] }, // prototip: açık
+  cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"] }
 });
 
+// ——— Static ———
 const PUBLIC_DIR = path.join(__dirname, "public");
 app.use(express.static(PUBLIC_DIR));
 app.get("/", (_req, res) => res.sendFile(path.join(PUBLIC_DIR, "index.html")));
 
+// ——— NFT API: /api/nfts?wallet=EQxxxx ———
+// Env'den okunan değişkenler: AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NFT (opsiyonel, default: nft_list)
+app.get("/api/nfts", async (req, res) => {
+  try {
+    const wallet = (req.query.wallet || "").trim().toLowerCase();
+    if (!wallet) return res.status(400).json({ error: "wallet_required" });
+
+    const baseId = process.env.AIRTABLE_BASE_ID;
+    const table = encodeURIComponent(process.env.AIRTABLE_TABLE_NFT || "nft_list");
+    const apiKey = process.env.AIRTABLE_API_KEY;
+
+    if (!baseId || !apiKey) {
+      return res.status(500).json({ error: "server_misconfigured" });
+    }
+
+    const formula = `LOWER({wallet})='${wallet}'`;
+    const url = `https://api.airtable.com/v0/${baseId}/${table}?filterByFormula=${encodeURIComponent(formula)}`;
+
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+    if (!r.ok) {
+      const text = await r.text();
+      console.error("Airtable error", r.status, text);
+      return res.status(502).json({ error: "airtable_error", status: r.status });
+    }
+
+    const data = await r.json();
+    const nfts = (data.records || []).map(rec => {
+      const f = rec.fields || {};
+      return {
+        id: rec.id,
+        name: f.nft_name_list || f.name || "Unnamed NFT",
+        imageUrl: f.image || f.image_url || null,
+        atk: f.ap ?? f.atk ?? 0,
+        def: f.dp ?? f.def ?? 0,
+        level: f.level ?? 1,
+        crit: f.crit_chance ?? 0.2,
+        gender: (f.gender || "").toLowerCase(),
+        wallet: (f.wallet || "").toLowerCase()
+      };
+    });
+
+    res.json({ nfts });
+  } catch (err) {
+    console.error("GET /api/nfts failed", err);
+    res.status(500).json({ error: "failed_to_fetch_nfts" });
+  }
+});
+
+// (opsiyonel) sağlık kontrolü
+app.get("/healthz", (_req, res) => res.send("ok"));
+
+/* ===========================
+   Aşağısı: mevcut Agora oyun mantığın
+   =========================== */
+
 const ROOM = "agora";
 const TICK_HZ = 10;
 
-// --- Gezegenler (isim, renk, sahne yarıçapı, tetik yarıçapı) ---
+// --- Gezegenler ---
 const PLANETS = [
   { name: "Astra",  color: 0xffcf5a, x:  10, z:  -5, radius: 2.2, r: 3.0 },
   { name: "Nyx",    color: 0x8a6cff, x: -12, z:  -8, radius: 2.8, r: 3.5 },
@@ -25,7 +101,7 @@ const PLANETS = [
   { name: "Cinder", color: 0xff6b6b, x:  -9, z:   9, radius: 2.4, r: 3.2 }
 ];
 
-// Hotspot’ları gezegenlerden üret + bir “Totem” bırak
+// Hotspot’ları gezegenlerden üret + “Totem”
 const hotspots = [
   { name: "Totem", x: 0, z: 0, r: 3 },
   ...PLANETS.map(p => ({ name: `Planet:${p.name}`, x: p.x, z: p.z, r: p.r }))
@@ -65,7 +141,7 @@ io.on("connection", (socket) => {
       .filter(([id]) => id !== socket.id)
       .map(([id,p]) => ({ id, x:p.x, y:p.y, z:p.z, ry:p.ry, name:p.name, rank:p.rank, emote:p.emote })),
     hotspots,
-    planets: PLANETS // istemci gezegenleri sahneye çizecek
+    planets: PLANETS
   });
 
   socket.to(ROOM).emit("player-joined", { id: you.id, x:you.x, y:you.y, z:you.z, ry:you.ry, name:you.name, rank:you.rank });
@@ -93,7 +169,6 @@ io.on("connection", (socket) => {
     p.lastChatTs = now;
     const msg = (text||"").toString().slice(0,240).trim(); if (!msg) return;
 
-    // slash emote
     const lower = msg.toLowerCase();
     const emoteCmd = ["/wave","/dance","/sit","/clap","/point","/cheer"].find(c => lower.startsWith(c));
     if (emoteCmd) { playEmote(p, emoteCmd.slice(1)); return; }
@@ -132,7 +207,7 @@ io.on("connection", (socket) => {
     const p = players.get(socket.id); if (!p) return;
     const hs = hotspots.find(h => h.name === name); if (!hs) return;
     const d2 = (p.x-hs.x)**2 + (p.z-hs.z)**2;
-    if (d2 > (hs.r+0.8)**2) return; // doğrulama
+    if (d2 > (hs.r+0.8)**2) return;
     if (p.visited[name]) return;
     p.visited[name] = true; p.points += 5;
     io.to(p.id).emit("points:update", { total:p.points, delta:+5, reason:`${name} bölgesini keşfettin` });

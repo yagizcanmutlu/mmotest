@@ -25,7 +25,6 @@
     .card input{padding:10px;border-radius:10px;border:1px solid #345;background:#0a0f14;color:#cfe}
     .card button{padding:12px;border-radius:12px;border:0;font-weight:700;background:#1d8f4a;color:#eafff0;cursor:pointer}
 
-    /* Chat sağ altta */
     .chat{position:absolute;right:12px;bottom:12px;width:340px;z-index:10}
     .chat-log{height:150px;overflow:auto;background:rgba(5,7,12,.55);border:1px solid #223;border-radius:10px;padding:8px;color:#cfe}
     .chat-log p{margin:4px 0}
@@ -35,57 +34,49 @@
 
     .floating{position:absolute;top:60px;left:50%;transform:translateX(-50%);color:#aff;text-shadow:0 0 8px #0ff;z-index:10;font-weight:700;display:none}
 
-    /* Mobile controls */
     #joystick{position:absolute;left:14px;bottom:14px;width:120px;height:120px;border-radius:50%;border:1px solid #234;background:rgba(10,14,20,.35);backdrop-filter:blur(3px);z-index:11;touch-action:none}
     #stick{position:absolute;left:50%;top:50%;width:56px;height:56px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(80,180,255,.35);border:1px solid #2a4}
     #lookpad{position:absolute;right:0;bottom:0;width:40vw;height:55vh;z-index:11;touch-action:none}
 
-    .seg{
-      display:inline-grid;grid-auto-flow:column;gap:6px;background:rgba(8,10,20,.6);
-      border:1px solid #234;border-radius:12px;padding:6px;user-select:none
-    }
+    .seg{display:inline-grid;grid-auto-flow:column;gap:6px;background:rgba(8,10,20,.6);border:1px solid #234;border-radius:12px;padding:6px;user-select:none}
     .seg input{display:none}
-    .seg label{
-      padding:8px 12px;border-radius:8px;cursor:pointer;color:#cfe;background:transparent;
-      border:1px solid transparent;font-weight:700;letter-spacing:.2px
-    }
+    .seg label{padding:8px 12px;border-radius:8px;cursor:pointer;color:#cfe;background:transparent;border:1px solid transparent;font-weight:700;letter-spacing:.2px}
     .seg input:checked + label{background:#1a2738;border-color:#29549b;color:#e7f0ff;box-shadow:0 0 0 2px rgba(41,84,155,.25) inset}
 
-    /* Sağ üst HUD konteyneri */
-    #hud-top-right{
-      position: fixed; top: 12px; right: 14px;
-      display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
-      z-index: 99999; pointer-events: none;
-    }
-    #hud-top-right > div{
-      pointer-events: auto; background: rgba(0,0,0,.45); backdrop-filter: blur(4px);
-      color: #d9ecff; font: 600 14px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Arial;
-      padding: 6px 10px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.4);
-    }
-    /* Gender renk ayrımı */
-    #hudGender.-male{   color:#9ad1ff; }
-    #hudGender.-female{ color:#ff77aa; }
+    #hud-top-right{position:fixed;top:12px;right:14px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;z-index:99999;pointer-events:none}
+    #hud-top-right>div{pointer-events:auto;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);color:#d9ecff;font:600 14px/1.2 system-ui,-apple-system,"Segoe UI",Roboto,Arial;padding:6px 10px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+    #hudGender.-male{color:#9ad1ff}
+    #hudGender.-female{color:#ff77aa}
 
-    /* Giriş panelindeki gender seçim stili */
-    .gender-select{ display:flex; gap:12px; margin-top:6px; background: rgba(0,0,0,.35); padding:8px 10px; border-radius:10px; }
-    .gender-select label{ display:flex; align-items:center; gap:6px; color:#e7f4ff; font-weight:600; cursor:pointer; }
-    .gender-select input{ transform: scale(1.05); }
+    .gender-select{display:flex;gap:12px;margin-top:6px;background:rgba(0,0,0,.35);padding:8px 10px;border-radius:10px}
+    .gender-select label{display:flex;align-items:center;gap:6px;color:#e7f4ff;font-weight:600;cursor:pointer}
+    .gender-select input{transform:scale(1.05)}
 
-    @media (max-width: 900px){
-      .chat{width:260px}
-      .chat-log{height:120px}
-    }
+    @media (max-width:900px){.chat{width:260px}.chat-log{height:120px}}
+
+    /* NFT modal */
+    .nft-modal{position:fixed;inset:0;z-index:9998;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
+    .nft-card{width:min(920px,92vw);max-height:86vh;overflow:auto;background:rgba(8,10,20,.96);border:1px solid #234;border-radius:16px;padding:14px;color:#d9ecff}
+    .nft-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:10px}
+    .nft-tile{border:1px solid #334;border-radius:12px;padding:8px;background:#0b0f18;cursor:pointer;display:flex;flex-direction:column;gap:6px}
+    .nft-tile img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px}
+    .nft-tile h4{font:700 13px/1.2 Inter,system-ui}
+    .nft-tile p{font:600 12px/1.2 Inter,system-ui;color:#9ad1ff}
+    .nft-tile.selected{outline:2px solid #1d8f4a;box-shadow:0 0 0 2px #1d8f4a inset}
+    .nft-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+    .btn{padding:10px 12px;border-radius:10px;border:1px solid #2a4;background:#0a151a;color:#d9ecff;cursor:pointer}
+    .btn.-primary{background:#1d8f4a;border-color:#2e9d5d;color:#ecfff2;font-weight:800}
+    .nft-mini{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.35);padding:8px;border-radius:10px}
+    .nft-mini img{width:40px;height:40px;border-radius:8px;object-fit:cover}
   </style>
 </head>
 
-<!-- ÜST KISIMDA, client.js'ten önce -->
+<!-- three import map (client.js'ten önce yüklenmeli) -->
 <script type="importmap">
-{
-  "imports": {
-    "three": "/vendor/three/build/three.module.js",
-    "three/examples/jsm/": "/vendor/three/examples/jsm/"
-  }
-}
+{ "imports": {
+  "three": "/vendor/three/build/three.module.js",
+  "three/examples/jsm/": "/vendor/three/examples/jsm/"
+} }
 </script>
 
 <body>
@@ -115,14 +106,22 @@
     <div class="cta" id="cta">
       <div class="card">
         <h1>Agora'ya katıl</h1>
+
+        <!-- Seçilen NFT özetini gösterir -->
+        <div id="chosenNftMini" class="nft-mini" style="display:none">
+          <img id="chosenNftImg" src="" alt="">
+          <div>
+            <div id="chosenNftName" style="font-weight:800"></div>
+            <small id="chosenNftStats" style="opacity:.8"></small>
+          </div>
+        </div>
+
         <input id="nameInput" placeholder="Görünen adın (ör. Yogi)" maxlength="20" />
-        <!-- Cinsiyet seçimi (client.js dinliyor) -->
         <div class="gender-select">
           <label><input type="radio" name="gender" value="female" checked />♀ Kadın</label>
           <label><input type="radio" name="gender" value="male" />♂ Erkek</label>
         </div>
 
-        <!-- İstersen kalsın: Avatar seg -->
         <div class="seg" style="margin-top:6px">
           <input type="radio" id="avatar1" name="avatar" value="1" checked />
           <label for="avatar1">Avatar 1</label>
@@ -132,7 +131,8 @@
           <label for="avatar3">Avatar 3</label>
         </div>
 
-        <button id="playBtn">Giriş</button>
+        <button id="playBtn" type="button">Giriş</button>
+        <button id="openNftSelect" class="btn" type="button">NFT Seç</button>
       </div>
     </div>
 
@@ -144,20 +144,200 @@
       </div>
     </div>
 
-    <!-- Mobile controls -->
     <div id="joystick"><div id="stick"></div></div>
     <div id="lookpad"></div>
 
     <div class="floating" id="toast"></div>
   </div>
 
+  <!-- NFT Seçim Modalı -->
+  <div id="nftModal" class="nft-modal" aria-hidden="true">
+    <div class="nft-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <h3 style="margin:0;color:#9cf">NFT KARAKTERİNİ SEÇ</h3>
+        <div id="walletLabel" style="opacity:.8;font:600 12px/1.2 Inter"></div>
+      </div>
+      <div id="nftGrid" class="nft-grid"><div style="opacity:.7">NFT'ler yükleniyor…</div></div>
+      <div class="nft-actions">
+        <button id="closeNft" class="btn">İptal</button>
+        <button id="useNft" class="btn -primary" disabled>Bu NFT ile GİR</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    // ? yardım toggle
+    // Yardım toggle
     const helpBtn = document.getElementById("helpBtn");
     const helpBox = document.getElementById("helpBox");
     helpBtn.addEventListener("click", ()=> {
       helpBox.style.display = helpBox.style.display === "block" ? "none" : "block";
     });
+  </script>
+
+  <!-- === Güvenli NFT akışı (BACKEND üstünden) — client.js'ten ÖNCE === -->
+  <script>
+    // Backendi farklı bir domainden çağıracaksan doldur:
+    // const BACKEND_BASE = "https://mmotest-5uut.onrender.com";
+    const BACKEND_BASE = ""; // aynı origin
+
+    const allowedOrigins = [
+      'https://cryptoyogi.webflow.io',
+      'https://www.cryptoyogi.com',
+      'https://www.cryptoyogi.world',
+      'https://yagizcanmutlu.github.io'
+    ];
+
+    // State
+    let walletFromHost = null;
+    let allWalletNFTs = [];
+    let selectedNFT = null;
+
+    // UI refs
+    const nftModal   = document.getElementById('nftModal');
+    const nftGrid    = document.getElementById('nftGrid');
+    const walletLbl  = document.getElementById('walletLabel');
+    const useNftBtn  = document.getElementById('useNft');
+    const closeNftBtn= document.getElementById('closeNft');
+    const openNftBtn = document.getElementById('openNftSelect');
+
+    const nameInput  = document.getElementById('nameInput');
+    const hudGender  = document.getElementById('hudGender');
+    const genderRadios = Array.from(document.querySelectorAll('input[name="gender"]'));
+
+    const chosenMini = document.getElementById('chosenNftMini');
+    const chosenImg  = document.getElementById('chosenNftImg');
+    const chosenName = document.getElementById('chosenNftName');
+    const chosenStats= document.getElementById('chosenNftStats');
+
+    // Gender HUD sync
+    function syncHudGender(){
+      const g = (genderRadios.find(r=>r.checked)?.value)||'female';
+      hudGender.textContent = g==='male' ? '♂ Erkek' : '♀ Kadın';
+      hudGender.className = g==='male' ? '-male' : '-female';
+    }
+    genderRadios.forEach(r => r.addEventListener('change', syncHudGender));
+
+    const mask = (addr)=> addr ? (addr.slice(0,4)+'…'+addr.slice(-4)) : '';
+
+    // Backend'ten NFT çek
+    async function fetchWalletNFTs(wallet){
+      const clean = (wallet||'').trim().toLowerCase();
+      if(!clean) return [];
+      const url = `${BACKEND_BASE}/api/nfts?wallet=${encodeURIComponent(clean)}`;
+      const res = await fetch(url, { credentials: 'include' });
+      if(!res.ok){ console.error('NFT fetch hata', res.status); return []; }
+      const data = await res.json();
+
+      // Esnek map: {nfts:[...]} veya Airtable {records:[{fields:...}]}
+      if (Array.isArray(data.nfts)) return data.nfts;
+
+      if (Array.isArray(data.records)) {
+        return data.records.map(r => {
+          const f = r.fields || {};
+          return {
+            id: r.id,
+            name: f.nft_name_list || 'Unnamed NFT',
+            imageUrl: f.image || 'https://placehold.co/300x300/111/AAA?text=NFT',
+            atk: f.ap || 50,
+            def: f.dp || 30,
+            level: f.level || 1,
+            crit: f.crit_chance || 0.2,
+            gender: (f.gender || '').toLowerCase()
+          };
+        });
+      }
+      return [];
+    }
+
+    // Modal helpers
+    function openModal(){ nftModal.style.display='flex'; nftModal.setAttribute('aria-hidden','false'); }
+    function closeModal(){ nftModal.style.display='none'; nftModal.setAttribute('aria-hidden','true'); }
+
+    function renderNFTGrid(nfts){
+      nftGrid.innerHTML = '';
+      nfts.forEach(nft => {
+        const tile = document.createElement('div');
+        tile.className = 'nft-tile';
+        tile.innerHTML = `
+          <img src="${nft.imageUrl}" alt="">
+          <h4>${nft.name}</h4>
+          <p>LVL ${nft.level} • ATK ${nft.atk} • DEF ${nft.def}</p>`;
+        tile.addEventListener('click', () => {
+          [...nftGrid.children].forEach(x=>x.classList.remove('selected'));
+          tile.classList.add('selected');
+          selectedNFT = nft;
+          useNftBtn.disabled = false;
+        });
+        nftGrid.appendChild(tile);
+      });
+      if(nfts.length===0){
+        nftGrid.innerHTML = '<div style="opacity:.7">Bu cüzdanda kayıtlı NFT bulunamadı.</div>';
+      }
+    }
+
+    function applyChosenNFT(){
+      if(!selectedNFT) return;
+      nameInput.value = selectedNFT.name;
+      if(selectedNFT.gender==='male' || selectedNFT.gender==='m'){
+        genderRadios.find(r=>r.value==='male').checked = true;
+      } else if(selectedNFT.gender==='female' || selectedNFT.gender==='f'){
+        genderRadios.find(r=>r.value==='female').checked = true;
+      }
+      syncHudGender();
+      chosenMini.style.display = 'flex';
+      chosenImg.src   = selectedNFT.imageUrl;
+      chosenName.textContent = selectedNFT.name;
+      chosenStats.textContent = `LVL ${selectedNFT.level} • ATK ${selectedNFT.atk} • DEF ${selectedNFT.def}`;
+    }
+
+    // Giriş → client.js'e payload ver (o, window.agoraInjectedPayload'ı okuyacak)
+    document.getElementById('playBtn').addEventListener('click', () => {
+      const payload = {
+        wallet: walletFromHost,
+        nft: selectedNFT || null,
+        playerName: nameInput.value.trim() || (selectedNFT ? selectedNFT.name : 'Player'),
+        gender: genderRadios.find(r=>r.checked)?.value || 'female'
+      };
+      window.agoraInjectedPayload = payload;
+      window.dispatchEvent(new CustomEvent('agoraInit', { detail: payload }));
+    });
+
+    // Modal kontrolleri
+    openNftBtn.addEventListener('click', () => {
+      if(!walletFromHost){ alert('Cüzdan adresi henüz gelmedi.'); return; }
+      walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
+      renderNFTGrid(allWalletNFTs);
+      openModal();
+    });
+    closeNftBtn.addEventListener('click', closeModal);
+    useNftBtn.addEventListener('click', () => { applyChosenNFT(); closeModal(); });
+
+    // Host → cüzdan (Webflow embed)
+    window.addEventListener('message', async (event) => {
+      if(!allowedOrigins.includes(event.origin)) return;
+      const msg = event.data || {};
+      if(msg.type === 'walletAddress'){
+        walletFromHost = (msg.address||'').trim();
+        walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
+        allWalletNFTs = await fetchWalletNFTs(walletFromHost);
+        if(allWalletNFTs.length === 1){ selectedNFT = allWalletNFTs[0]; applyChosenNFT(); }
+        else { renderNFTGrid(allWalletNFTs); openModal(); }
+      }
+      if(msg.type === 'selectedNFT' && msg.payload){ selectedNFT = msg.payload; applyChosenNFT(); }
+    });
+
+    // Fallback: URL ?wallet= adresinden al (yerel test için)
+    (async () => {
+      const u = new URL(location.href);
+      const w = u.searchParams.get('wallet');
+      if (w && !walletFromHost) {
+        walletFromHost = w.trim();
+        walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
+        allWalletNFTs = await fetchWalletNFTs(walletFromHost);
+        if(allWalletNFTs.length === 1){ selectedNFT = allWalletNFTs[0]; applyChosenNFT(); }
+      }
+      syncHudGender();
+    })();
   </script>
 
   <!-- Sıra önemli: önce socket.io, sonra module client -->
