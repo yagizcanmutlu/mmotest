@@ -5,13 +5,14 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
 /* global io */
 (() => {
-  // UI
-    // ⛔ client.js birden fazla kez çalışıyorsa hemen çık
+  // ⛔ client.js birden fazla kez çalışıyorsa hemen çık
   if (window.__AGORA_CLIENT_RUNNING__) {
     console.warn("[Agora] client already running — aborting duplicate init");
     return;
   }
   window.__AGORA_CLIENT_RUNNING__ = true;
+
+  // UI
   const root     = document.getElementById("root");
   const cta      = document.getElementById("cta");
   const playBtn  = document.getElementById("playBtn");
@@ -24,23 +25,23 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const joy      = document.getElementById("joystick");
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
-    // === Registry & Collisions === KARAKTERLER & ÇARPIŞMALAR ===
-  const npcRegistry = new Map();               // key -> THREE.Group (root)
-  const colliders  = [];                       // { key, root, r, padding }
-  const PLAYER_RADIUS = 0.45;                  // mini astronotun “çap”ı ~0.9m ise yarıçap ~0.45
 
+  // === Registry & Collisions ===
+  const npcRegistry = new Map();             // key -> THREE.Group (root)
+  const colliders  = [];                     // { key, root, r, padding }
+  const PLAYER_RADIUS = 0.45;
+  const COLLISION_ENABLED = true;            // İstersen hızlı teşhis için false yap
 
-    // === GROUND CONFIG ===
+  // === GROUND CONFIG ===
   const GROUND_MODE = "custom"; // "custom" | "mars"
-  const GROUND_CUSTOM_URL  = "/textures/floor.webp";  // senin kare PS tekstürün (seamless olursa şahane)
-  const GROUND_CUSTOM_REPEAT = 18;                           // karo tekrarı (daha büyük = daha sık karo)
-  const GROUND_NORMAL_URL  = "https://cdn.prod.website-files.com/67fb1cd83af51c4fe96dacb2/69057eed2a91dc8d9d0f1bdc_floor.webp";                             // varsa normal map koy (opsiyonel)// mars için boş bırak//
-
+  const GROUND_CUSTOM_URL  = "/textures/floor.webp";
+  const GROUND_CUSTOM_REPEAT = 18;
+  const GROUND_NORMAL_URL  = "https://cdn.prod.website-files.com/67fb1cd83af51c4fe96dacb2/69057eed2a91dc8d9d0f1bdc_floor.webp";
   const GROUND_MARS_URL    = "https://raw.githubusercontent.com/pmndrs/drei-assets/master/textures/planets/mars_albedo.jpg";
   const GROUND_MARS_NORMAL = "https://raw.githubusercontent.com/pmndrs/drei-assets/master/textures/planets/mars_normal.jpg";
   const GROUND_MARS_REPEAT = 22;
 
-  // Diskleri tamamen kapat
+  // Diskleri kapat
   const SHOW_PADS = false;
 
   const socket = io();
@@ -54,10 +55,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-  // renderer.clippingPlanes = [ new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.0) ];
-  renderer.clippingPlanes = [];  // kapalı
-
+  renderer.clippingPlanes = [];
   root.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -114,7 +112,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   ground.receiveShadow = true;
   scene.add(ground);
 
-
   // Stars
   const starGeom = new THREE.BufferGeometry();
   const starPos = [];
@@ -125,13 +122,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const stars = new THREE.Points(starGeom, new THREE.PointsMaterial({ size:0.6, color:0x8cbcff }));
   scene.add(stars);
 
-    // Ufuk “glitch”ini azaltmak için: biraz daha koyu sis ve daha yakın başlangıç
   scene.fog = new THREE.Fog(0x05060a, 8, 140);
-  // yıldız pırıltılarını ufukta aliasing yapmasın diye hafif küçült
   stars.material.size = 0.45;
 
-
-  // === PERF LOGGER (FPS + draw/tri/tex/geo) ===
+  // === PERF LOGGER ===
   let _fpsEWMA = 0, _fpsLast = performance.now();
   setInterval(() => {
     const ri = renderer.info;
@@ -235,47 +229,47 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       else if (d >= pack.dist + UNLOAD_HYSTERESIS && pack.loaded && pack.unload) _unloadPack(pack);
     }
   }
-  // Dışarıdan kayıt edebilmen için küçük API:
+  // Dışarı API
   window.AGORALazy = { register: registerLazyPack, packs: lazyPacks };
 
-  // ---- NPC yardımcıları
+  // ---- Hotspots / Pads helpers ----
+  const hotspotInfo = new Map();
+  const _spaceBaseHotspotMeshes = new Map();
+
   function getAnyPadCenter() {
-    if (_spaceBaseHotspotMeshes.has('AgoraPad')) {
+    // Önce hotspotInfo (AgoraPad) — SHOW_PADS kapalıyken burası devreye girer
+    const h = hotspotInfo.get('AgoraPad');
+    if (h) return h.pos.clone();
+
+    if (_spaceBaseHotspotMeshes.has('AgoraPad'))
       return _spaceBaseHotspotMeshes.get('AgoraPad').position.clone();
-    }
+
     for (const [, grp] of _spaceBaseHotspotMeshes) return grp.position.clone();
-    return new THREE.Vector3(0,0,0);
+    return (window.local?.parts?.group?.position?.clone?.() || new THREE.Vector3(0,0,0));
   }
 
+  // ---- NPC yardımcıları ----
   const _spawnedNPC = new Set(); // url|name anahtarıyla dedup
-  
+
   function spawnNPC(url, {
     onPad = false,
     offset = { x:0, z:0 },
     targetHeight = null,
     targetDiag   = null,
     x=0, z=0, y=0, ry=0, scale=null, name=null,
-    collision = true,           // <— yeni: collider açılsın mı?
-    colliderPadding = 0.30      // <— yeni: objeye ekstra tampon
+    collision = true,
+    colliderPadding = 0.30
   } = {}) {
     if (!gltfLoader) { console.warn('GLTFLoader yok, NPC yüklenemez:', url); return; }
-// 🔒 Aynı (url+name) için ikinci kez yükleme yapma
-    const key = `${url}|${name||""}`;
-    if (_spawnedNPC.has(key)) {
-      // Varsa sadece konumu güncelle (pad’e sabitleme senaryosu)
-      const padPos = onPad ? getAnyPadCenter() : null;
-      if (padPos) {
-        // İstersen burada sahnedeki mevcut root'u konumlandırabilirsin (gerekli değilse boş bırak)
-      }
-      return;
-    }
-    _spawnedNPC.add(key);
-    
+
+    const dedupKey = `${url}|${name||""}`;
+    if (_spawnedNPC.has(dedupKey)) return;
+    _spawnedNPC.add(dedupKey);
+
     gltfLoader.load(url, (gltf) => {
       const model = gltf.scene || gltf.scenes?.[0];
       if (!model) { console.warn('GLB sahnesi boş:', url); return; }
 
-      // minik kopuk parçaları gizle
       model.traverse(o => {
         if (!o.isMesh) return;
         o.castShadow = o.receiveShadow = true;
@@ -328,40 +322,22 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
       scene.add(root);
       console.log('[NPC]', url, 'spawn @', root.position);
-            // ==== KAYIT (registry) ====
-      const key = name || url;
-      npcRegistry.set(key, root);
+
+      // ==== KAYIT ====
+      const regKey = name || url;
+      npcRegistry.set(regKey, root);
 
       // ==== COLLIDER (XZ dairesel) ====
       if (collision) {
-        // world boyutuna göre yarıçap hesapla
         root.updateMatrixWorld(true);
         const bb   = new THREE.Box3().setFromObject(root);
         const size = bb.getSize(new THREE.Vector3());
         const rXZ  = 0.5 * Math.hypot(size.x, size.z) + colliderPadding;
-        colliders.push({ key, root, r: rXZ, padding: colliderPadding });
+        colliders.push({ key: regKey, root, r: rXZ, padding: colliderPadding });
       }
     }, undefined, (err) => {
       console.error('NPC yüklenemedi:', url, err);
     });
-
-    
-      // Pyramid City – pad merkezinin sağına, hafif döndürülmüş
-  {
-    const c = getAnyPadCenter(); // mevcut ana pad merkezi
-    spawnNPC('/models/futuristic_pyramid_cityscape.glb', {
-      onPad: false,
-      x: c.x + 32,   // konumu kendine göre ayarla
-      z: c.z - 18,
-      y: 0,          // z-fighting olursa 0.05 yap
-      ry: -Math.PI * 5,
-      // model büyükse/ küçükse tek yerden ölçeklemek için targetDiag kullan:
-      targetDiag: 5,     // "yaklaşık" diyagonal (m). Göz kararı ayarlarsın.
-      // ya da boy kontrolü: targetHeight: 30,
-      name: 'Pyramid City'
-    });
-  }
-
   }
 
   function getNPC(key){ return npcRegistry.get(key) || null; }
@@ -371,7 +347,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     if(!root) return false;
     scene.remove(root);
     npcRegistry.delete(key);
-    // collider'ı da düşür
     const i = colliders.findIndex(c => c.key === key);
     if (i >= 0) colliders.splice(i,1);
     return true;
@@ -382,7 +357,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     if (!root) return;
     root.position.set(x, y, z);
   }
-// Çarpışma fonksiyonları 
+
+  // Çarpışma fonksiyonları
   function collidesAt(nx, nz){
     for (const c of colliders){
       const cx = c.root ? c.root.position.x : c.x;
@@ -404,7 +380,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       const d2 = dx*dx + dz*dz;
       if (d2 < rr*rr) {
         const d = Math.sqrt(d2) || 1e-6;
-        // İçeriden sınırın tam dışına it
         const k = (rr - d) / d + 1e-3;
         px += dx * k;
         pz += dz * k;
@@ -412,20 +387,14 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
     pos.x = px; pos.z = pz;
   }
-    
 
-  // Kaydırmalı çözüm: önce tam, sonra X ya da Z ekseninde kaydırarak dener
+  // Kaydırmalı çözüm
   function resolveCollision(px, pz, nx, nz){
     if (!collidesAt(nx, nz)) return { x:nx, z:nz };
-    // slide X
-    if (!collidesAt(nx, pz)) return { x:nx, z:pz };
-    // slide Z
-    if (!collidesAt(px, nz)) return { x:px, z:nz };
-    // tamamen engelli: yerinde kal
-    return { x:px, z:pz };
+    if (!collidesAt(nx, pz)) return { x:nx, z:pz }; // slide X
+    if (!collidesAt(px, nz)) return { x:px, z:nz }; // slide Z
+    return { x:px, z:pz }; // tamamen engelli
   }
-    
-    
 
   // ---- Oyuncu: Stylized mini astronot
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff, opts={}){
@@ -513,16 +482,29 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const keys = new Set();
   let chatFocus = false;
 
-  window.addEventListener("keydown", (e)=>{
-    if (e.code === "Enter") { chatFocus = !chatFocus; if (chatFocus) chatText?.focus(); else chatText?.blur(); return; }
-    if (chatFocus) return;
-    keys.add(e.code);
-    const em = { Digit1:"wave", Digit2:"dance", Digit3:"sit", Digit4:"clap", Digit5:"point", Digit6:"cheer" };
-    if (em[e.code]) socket.emit("emote:play", em[e.code]);
-    if (e.code === "KeyQ") local.yaw += 0.06;
-    if (e.code === "KeyE") local.yaw -= 0.06;
-  });
-  window.addEventListener("keyup", (e)=> keys.delete(e.code));
+  // Klavye olayları — ENTER chate toggle eder; WASD/Ok tuşları her durumda preventDefault
+  const MOVE_KEYS = new Set(["KeyW","KeyA","KeyS","KeyD","ShiftLeft","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
+
+  document.addEventListener("keydown", (e) => {
+    if (e.code === "Enter") {
+      chatFocus = !chatFocus;
+      if (chatFocus) chatText?.focus(); else chatText?.blur();
+      return;
+    }
+    if (MOVE_KEYS.has(e.code)) e.preventDefault();
+    if (!chatFocus) {
+      keys.add(e.code);
+      const em = { Digit1:"wave", Digit2:"dance", Digit3:"sit", Digit4:"clap", Digit5:"point", Digit6:"cheer" };
+      if (em[e.code]) socket.emit("emote:play", em[e.code]);
+      if (e.code === "KeyQ") local.yaw += 0.06;
+      if (e.code === "KeyE") local.yaw -= 0.06;
+    }
+  }, { passive:false });
+
+  document.addEventListener("keyup", (e) => {
+    if (MOVE_KEYS.has(e.code)) e.preventDefault();
+    keys.delete(e.code);
+  }, { passive:false });
 
   // Pointer-lock look (desktop)
   if (playBtn) playBtn.addEventListener("click", () => {
@@ -566,7 +548,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     camDist = Math.min(10, Math.max(2, camDist));
   }, {passive:true});
 
-  // Mobile joystick
+  // Mobile joystick (touch bug fix: clientY kullan)
   let joyActive = false, joyCenter = {x:0,y:0}, joyVec = {x:0,y:0};
   const stickHalf = () => (stick ? stick.getBoundingClientRect().width/2 : 0);
   function setStick(px,py){ if (!stick) return; stick.style.transform = `translate(${px - stickHalf()}px, ${py - stickHalf()}px)`; }
@@ -585,148 +567,23 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     joy.addEventListener("mousedown", (e)=>{ e.preventDefault(); joyStart(e.clientX,e.clientY); });
     window.addEventListener("mousemove", (e)=>{ if (joyActive) updateJoy(e.clientX,e.clientY); });
     window.addEventListener("mouseup", joyReset);
-    joy.addEventListener("touchstart", (e)=>{ const t=e.touches[0]; if (t) joyStart(t.clientX,e.clientY); }, {passive:false});
+    joy.addEventListener("touchstart", (e)=>{ const t=e.touches[0]; if (t) joyStart(t.clientX,t.clientY); }, {passive:false});
     joy.addEventListener("touchmove", (e)=>{ const t=e.touches[0]; if (t) updateJoy(t.clientX,t.clientY); }, {passive:false});
     joy.addEventListener("touchend", joyReset);
   }
 
   // Hotspots & Planets
-  const hotspotInfo = new Map();
-  const _spaceBaseHotspotMeshes = new Map();
-
-  function _createSpaceBaseDiscMesh(radius, opts = {}) {
-    const params = {
-      tilesPerUnit: 2.8,
-      groove: 0.03,
-      bevel: 0.015,
-      stripeDensity: 7.0,
-      emissiveK: 1.35,
-      caution: new THREE.Color("#ffd166"),
-      baseColor: 0x131a24,
-      ...opts
-    };
-
-    const mat = new THREE.MeshStandardMaterial({ color: params.baseColor, roughness: 0.95, metalness: 0.08 });
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = { value: 0 };
-      shader.uniforms.uTiles = { value: params.tilesPerUnit };
-      shader.uniforms.uGroove = { value: params.groove };
-      shader.uniforms.uBevel = { value: params.bevel };
-      shader.uniforms.uStripeDensity = { value: params.stripeDensity };
-      shader.uniforms.uEmissiveK = { value: params.emissiveK };
-      shader.uniforms.uCaution = { value: params.caution };
-
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;`)
-        .replace('#include <worldpos_vertex>', `
-          #include <worldpos_vertex>
-          vec4 wp4 = modelMatrix * vec4( transformed, 1.0 );
-          #ifdef USE_INSTANCING
-            wp4 = instanceMatrix * wp4;
-          #endif
-          vWPos = wp4.xyz;
-        `);
-
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `
-          #include <common>
-          varying vec3 vWPos;
-          uniform float uTime, uTiles, uGroove, uBevel, uStripeDensity, uEmissiveK;
-          uniform vec3 uCaution;
-
-          float hash21(vec2 p){
-            p = fract(p*vec2(123.34,456.21));
-            p += dot(p, p+45.32);
-            return fract(p.x*p.y);
-          }
-          float grooveMask(vec2 p){
-            vec2 gv = fract(p) - 0.5;
-            vec2 dv = (0.5 - abs(gv));
-            float edge = min(dv.x, dv.y);
-            return 1.0 - smoothstep(uGroove-uBevel, uGroove+uBevel, edge);
-          }
-          float cautionStripes(vec2 p){
-            vec2 cell = floor(p);
-            vec2 gv = fract(p) - 0.5;
-            float rnd = hash21(cell);
-            if (rnd < 0.66) return 0.0;
-            float dens = uStripeDensity + floor(rnd*3.0);
-            float dir = (rnd>0.82)? 1.0 : -1.0;
-            float ramp = (abs(gv.x)>abs(gv.y)) ? gv.y : gv.x;
-            float s = fract(ramp*dens + (uTime*0.28)*dir);
-            float bar = step(0.5, s);
-            float edgeBand = smoothstep(0.12, 0.10, min(0.5-abs(gv.x), 0.5-abs(gv.y)));
-            return bar * edgeBand;
-          }
-        `)
-        .replace('#include <map_fragment>', `
-          #include <map_fragment>
-          vec2 p = vWPos.xz * uTiles;
-
-          float g = grooveMask(p);
-          diffuseColor.rgb *= (1.0 - g*0.18);
-
-          float s = cautionStripes(p);
-          float pulse = 0.6 + 0.4 * sin(uTime*3.0 + (p.x+p.y));
-          vec3 emiss = uCaution * (s * uEmissiveK * pulse);
-
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*0.75 + uCaution*0.25, s*0.85);
-          diffuseColor.rgb += emiss;
-        `);
-
-      mat.userData._shader = shader;
-    };
-
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 96), mat);
-    disc.rotation.x = -Math.PI/2;
-    disc.position.y = 0.01;
-    disc.receiveShadow = true;
-
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(radius*0.94, radius*1.02, 128),
-      new THREE.MeshBasicMaterial({
-        color: 0x66ccff,
-        transparent: true,
-        opacity: 0.55,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-        depthWrite: false
-      })
-    );
-    ring.rotation.x = -Math.PI/2;
-    ring.position.y = 0.015;
-
-    const group = new THREE.Group();
-    group.add(disc, ring);
-
-    group.onBeforeRender = () => {
-      const t = performance.now()*0.001;
-      const sh = disc.material.userData._shader;
-      if (sh) sh.uniforms.uTime.value = t;
-      ring.material.opacity = 0.35 + 0.35*(0.5+0.5*Math.sin(t*2.6));
-    };
-
-    return group;
-  }
-
-  function addHotspotDisk(name, x, z, r){
-    // hep logic tutalım ama MESH eklemeyelim
-    hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
-
-    if (!SHOW_PADS) return; // <— diskleri KAPAT
-
-    // (Aşağıdaki eski disk çizimlerini tamamen silebilirsin)
-    // const grp = _createSpaceBaseDiscMesh(r);
-    // grp.position.set(x, 0, z);
-    // scene.add(grp);
-    // _spaceBaseHotspotMeshes.set(name, grp);
-  }
-
   const planetMeshes = [];
   const moonTex = new THREE.TextureLoader().load("https://happy358.github.io/Images/textures/lunar_color.jpg", t=>{ t.colorSpace = THREE.SRGBColorSpace; });
   const PLANET_SIZE_MUL = 1.8;
-  const PLANET_DIST_MUL = 3.33;   // Uzaklık çarpanı
-  const PLANET_ALTITUDE = 6.0;    // Gezegenleri pad’den yukarı kaldırma
+  const PLANET_DIST_MUL = 3.33;
+  const PLANET_ALTITUDE = 6.0;
+
+  function addHotspotDisk(name, x, z, r){
+    hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
+    if (!SHOW_PADS) return;
+    // Disk mesh'lerini kapattık.
+  }
 
   function addPlanet(p){
     const R = (p.radius || 20) * (p.scale || PLANET_SIZE_MUL);
@@ -734,7 +591,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     const mat = new THREE.MeshPhongMaterial({ color: p.color, map: moonTex, bumpMap: moonTex, bumpScale: 0.6 });
     const mesh = new THREE.Mesh(geo, mat);
 
-    // SADECE GEZEGENİ YÜKSELT
     const altitude = (p.altitude != null) ? p.altitude : 0;
     mesh.position.set(p.x, R + 0.1 + altitude, p.z);
     mesh.rotation.x = -Math.PI/10;
@@ -748,9 +604,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     scene.add(mesh);
     planetMeshes.push({ name: p.name, mesh, label, R });
 
-    // Planet altına pad
     addHotspotDisk(`Pad:${p.name}`, p.x, p.z, Math.max(12, Math.min(22, R*0.55)));
-
     hotspotInfo.set(`Planet:${p.name}`, { pos: new THREE.Vector3(p.x, 0, p.z), r: (p.r ? p.r * (p.scale || PLANET_SIZE_MUL) : (R + 10)) });
   }
 
@@ -768,7 +622,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     local.parts.group.position.set(local.x, 0, local.z);
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
-    // Pad/hotspot
+    // Pads/hotspots
     const PAD_KEYWORDS = ["totem","spawn","pad","platform","agora","hub","dock","deck"];
     let padCount = 0;
 
@@ -780,13 +634,12 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       hotspotInfo.set(name, { pos: new THREE.Vector3(h.x, 0, h.z), r });
     });
 
-    // Ana pad yoksa oluştur; varsa da genişlet
     const padPos = (padCount>0)
       ? getAnyPadCenter()
       : new THREE.Vector3(local.parts.group.position.x, 0, local.parts.group.position.z);
-    addHotspotDisk("AgoraPad", padPos.x, padPos.z, 18); // büyütülmüş ana pad
+    addHotspotDisk("AgoraPad", padPos.x, padPos.z, 18);
 
-    // Gezegenler (daha uzak + yükseltilmiş)
+    // Gezegenler
     (planets || []).forEach(p => {
       const x = (p.x || 0) * PLANET_DIST_MUL;
       const z = (p.z || 0) * PLANET_DIST_MUL;
@@ -799,9 +652,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       updateNameTag(R, p.name || R.name);
     });
 
-    // NPC’ler
+    // NPC’ler (bir kez)
     if (!staticSpawned) {
       staticSpawned = true;
+
       spawnNPC('/models/readyplayermale_cyberpunk.glb', {
         onPad: true,
         offset: { x: -7, z: -2 },
@@ -818,16 +672,31 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         name: 'Agora Taxi'
       });
 
-            // bootstrap içi, staticSpawned bloğunun SONUNA ekle:
+      // Pyramid City — pad merkezine göre
+      {
+        const c = getAnyPadCenter();
+        spawnNPC('/models/futuristic_pyramid_cityscape.glb', {
+          onPad: false,
+          x: c.x + 32,
+          z: c.z - 18,
+          y: 0.0,
+          ry: -Math.PI * 5,
+          targetDiag: 5,
+          name: 'Pyramid City'
+        });
+      }
+
+      // Sci-Fi modular stack
       spawnNPC('/models/sci-fi_modular_stack_asset.glb', {
-        onPad: true,                 // ana pad’i referans al
-        offset: { x: -12, z: 9 },    // pad merkezine göre konum
-        targetDiag: 14,              // ilk boyut: “diyagonal” ~14m
-        y: 0.0,                      // zeminden ekstra yükseklik
-        ry: Math.PI * 0.1,           // hafif dönüş
+        onPad: true,
+        offset: { x: -12, z: 9 },
+        targetDiag: 14,
+        y: 0.0,
+        ry: Math.PI * 0.1,
         name: 'Stack Module'
       });
-      // --- Dinamik paket ÖRNEK kaydı (istersen aç) ---
+
+      // Örnek dinamik paket kayıtları
       // window.AGORALazy.register({ name:'props-zone-1', x: padPos.x + 28, z: padPos.z, url:'/models/props_pack.glb', dist:30, unload:true });
       // window.AGORALazy.register({ name:'props-zone-2', x: padPos.x - 32, z: padPos.z + 18, url:'/models/benches.glb',   dist:28, unload:true });
     }
@@ -869,7 +738,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     showToast(`Görev: ${code} ${progress}/${goal}`)
   );
 
-  // Emote animasyonları
+  // Emotes
   const emoteTokens = new Map();
   function resetPose(parts){
     parts.armL.rotation.set(0,0,-Math.PI/8);
@@ -954,9 +823,12 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
     const dt = Math.min(0.05, (now-last)/1000); last = now;
 
+    // Spawn/ilk frame'de iç içe başlama ihtimaline karşı hafif push-out
+    if (COLLISION_ENABLED) pushOutFromColliders(local.parts.group.position);
+
     // Movement
-    const kForward = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0);
-    const kStrafeKB  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0);
+    const kForward   = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0) || (keys.has("ArrowUp")?1:0) - (keys.has("ArrowDown")?1:0);
+    const kStrafeKB  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0) || (keys.has("ArrowRight")?1:0) - (keys.has("ArrowLeft")?1:0);
     let forward = kForward + (joyVec.y||0);
     let strafe  = kStrafeKB + (joyVec.x||0);
     forward = Math.max(-1, Math.min(1, forward));
@@ -965,21 +837,25 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     const mag = Math.hypot(strafe,forward) || 1;
     const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (mag>1 ? 1/mag : 1);
 
-  if (forward || strafe) {
-    const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
-    const dx = forward * sin - strafe * cos;
-    const dz = forward * cos + strafe * sin;
+    if (forward || strafe) {
+      const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
+      const dx = forward * sin - strafe * cos;
+      const dz = forward * cos + strafe * sin;
 
-    const px = local.parts.group.position.x;
-    const pz = local.parts.group.position.z;
+      const px = local.parts.group.position.x;
+      const pz = local.parts.group.position.z;
 
-    const nx = px + dx * spd * dt;
-    const nz = pz + dz * spd * dt;
+      const nx = px + dx * spd * dt;
+      const nz = pz + dz * spd * dt;
 
-    const solved = resolveCollision(px, pz, nx, nz);
-    local.parts.group.position.x = solved.x;
-    local.parts.group.position.z = solved.z;
-  }
+      if (COLLISION_ENABLED) {
+        const solved = resolveCollision(px, pz, nx, nz);
+        local.parts.group.position.x = solved.x;
+        local.parts.group.position.z = solved.z;
+      } else {
+        local.parts.group.position.set(nx, 0, nz);
+      }
+    }
 
     local.parts.group.rotation.y = local.yaw;
 
@@ -992,7 +868,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     // Planets
     for (const p of planetMeshes) p.mesh.rotation.y -= 0.0012;
 
-    // Dinamik paketleri kontrol et
+    // Dinamik paketler
     updateLazyPacks(local.parts.group.position.x, local.parts.group.position.z);
 
     // Net sync
@@ -1023,6 +899,5 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   window.addEventListener("beforeunload", () => {
     try { socket?.close(); } catch(e) {}
   });
-  
 
 })();
