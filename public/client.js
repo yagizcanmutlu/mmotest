@@ -40,6 +40,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   const hemi = new THREE.HemisphereLight(0x87a8ff, 0x070712, 1.0);
   const dir  = new THREE.DirectionalLight(0x8fd0ff, 0.6);
+  dir.castShadow = true;
+  dir.shadow.bias = -0.0003;
+  dir.shadow.normalBias = 0.02;
+
   dir.position.set(6,10,4);
   dir.castShadow = true;
   scene.add(hemi, dir);
@@ -124,52 +128,108 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return box;
   }
 
-  function spawnNPC(url, { x=0, z=0, y=0, ry=0, scale=null, name=null } = {}) {
+  function getAnyPadCenter() {
+    // Önce "AgoraPad" varsa onu, yoksa ilk kaydı, hiçbiri yoksa (0,0,0)
+    if (_spaceBaseHotspotMeshes.has('AgoraPad')) {
+      return _spaceBaseHotspotMeshes.get('AgoraPad').position.clone();
+    }
+    for (const [, grp] of _spaceBaseHotspotMeshes) return grp.position.clone();
+    return new THREE.Vector3(0,0,0);
+  }
+
+  function spawnNPC(url, {
+    onPad = false,
+    offset = { x:0, z:0 },
+    targetHeight = null,   // insan için 1.8 gibi
+    targetDiag   = null,   // araba için 4.2 gibi
+    x=0, z=0, y=0, ry=0, scale=null, name=null
+  } = {}) {
     if (!gltfLoader) { console.warn('GLTFLoader yok, NPC yüklenemez:', url); return; }
+
     gltfLoader.load(url, (gltf) => {
-      const root = new THREE.Group();
-      root.name = `NPC:${url.split('/').pop()}`;
       const model = gltf.scene || gltf.scenes?.[0];
       if (!model) { console.warn('GLB sahnesi boş:', url); return; }
 
-      model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }});
+      // Küçücük “kopuk” parçaları gizle (genelde yerde tek tri gibi artefakt olur)
+      model.traverse(o => {
+        if (!o.isMesh) return;
+        o.castShadow = o.receiveShadow = true;
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        const bb = o.geometry.boundingBox;
+        const diag = bb.max.clone().sub(bb.min).length();
+        if (diag < 0.02) o.visible = false; // 2 cm
+      });
 
-      if (scale != null) model.scale.setScalar(scale);
+      // Yatay pivotu merkeze çek (x,z), sonra ayakları zemine bastır
+      const bb0 = new THREE.Box3().setFromObject(model);
+      const c0  = bb0.getCenter(new THREE.Vector3());
+      model.position.x -= c0.x;
+      model.position.z -= c0.z;
 
+      // Ölçek (boy ya da diyagonale göre)
+      if (targetHeight || targetDiag) {
+        const bbA = new THREE.Box3().setFromObject(model);
+        const size = bbA.getSize(new THREE.Vector3());
+        const height = size.y;
+        const diag   = size.length();
+        const s = targetHeight
+          ? (targetHeight / Math.max(height,1e-6))
+          : (targetDiag   / Math.max(diag,1e-6));
+        model.scale.setScalar(s);
+      } else if (scale != null) {
+        model.scale.setScalar(scale);
+      }
+
+      // Ayaklar zemine (y = +0.02)
+      const bb1 = new THREE.Box3().setFromObject(model);
+      model.position.y += -bb1.min.y + 0.02;
+
+      // Kök grup + isim etiketi
+      const root = new THREE.Group();
       root.add(model);
-      scene.add(root);
 
-      // Zemine ayak bastır
-      root.updateMatrixWorld(true);
-      const bb = worldBBox(model);
-      const feet = bb.min.y;
-      model.position.y += -feet + 0.02;
-
-      // Konum, yön ve isim
-      root.position.set(x, y, z);
-      root.rotation.y = ry;
       if (name) {
+        const bb2 = new THREE.Box3().setFromObject(model);
+        const h   = bb2.getSize(new THREE.Vector3()).y;
         const tag = makeNameSprite(name);
-        tag.position.y = (bb.max.y - bb.min.y) + 0.4;
+        tag.position.y = h + 0.4;
         root.add(tag);
       }
 
-      console.log('[NPC]', url, 'spawn @', x, z);
+      // Konum
+      let pos = onPad ? getAnyPadCenter() : new THREE.Vector3(x,0,z);
+      pos.x += offset.x || 0;
+      pos.z += offset.z || 0;
+      root.position.copy(pos);
+      root.position.y = y;
+      root.rotation.y = ry;
+
+      scene.add(root);
+      console.log('[NPC]', url, 'spawn @', root.position);
     }, undefined, (err) => {
       console.error('NPC yüklenemedi:', url, err);
     });
   }
 
+
   // === SABİT NPC'LER ===
-  // Cyberpunk karakter: sabit heykel gibi
+  // --- Pad'ler kurulduktan sonra NPC'leri pad merkezine koy ---
   spawnNPC('/models/readyplayermale_cyberpunk.glb', {
-    x: 6, z: 8, ry: -Math.PI/4, scale: 1.0, name: 'Neo Yogi'
+    onPad: true,
+    offset: { x: 0, z: -4 },    // diskin merkezinden 4m geride dursun
+    targetHeight: 1.8,
+    ry: Math.PI * 0.2,
+    name: 'Neo Yogi'
   });
 
-  // Araba: sahnenin sağ önüne
   spawnNPC('/models/cyberpunk_car.glb', {
-    x: -8, z: 12, ry: Math.PI * 0.15, scale: 1.0, name: 'Agora Taxi'
+    onPad: true,
+    offset: { x: 5, z: 2 },     // aynı pad üstünde hafif yanda dursun
+    targetDiag: 4.2,            // ~4.2m araba boyu (diag)
+    ry: -Math.PI * 0.35,
+    name: 'Agora Taxi'
   });
+
 
   // ---- Oyuncu: Stylized mini astronot ----
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff, opts={}){
