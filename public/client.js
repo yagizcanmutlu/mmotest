@@ -5,73 +5,31 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
 /* global io */
 (() => {
-  // ---------- UI ----------
-  const root      = document.getElementById("root");
-  const cta       = document.getElementById("cta");
-  const playBtn   = document.getElementById("playBtn");
-  const nameInput = document.getElementById("nameInput");
-  const pointsEl  = document.getElementById("points");
-  const chatLog   = document.getElementById("chatLog");
-  const chatText  = document.getElementById("chatText");
-  const chatSend  = document.getElementById("chatSend");
-  const toast     = document.getElementById("toast");
-  const joy       = document.getElementById("joystick");
-  const stick     = document.getElementById("stick");
-  const lookpad   = document.getElementById("lookpad");
-  const hudGender = document.getElementById("hudGender"); // yoksa sorun olmaz
-
-  // ---------- Gender seçimi (gender radios varsa onları, yoksa avatar radios fallback) ----------
-  const genderRadios = document.querySelectorAll('input[name="gender"]');
-  const avatarRadios = document.querySelectorAll('input[name="avatar"]');
-
-  function detectGender() {
-    const gr = [...genderRadios].find(r => r.checked);
-    if (gr) return gr.value; // 'male' | 'female'
-    const ar = [...avatarRadios].find(r => r.checked);
-    if (ar) return (ar.value === '2') ? 'male' : 'female'; // Avatar 2 = erkek fallback
-    return 'female';
-  }
-  let selectedGender = detectGender();
-  [...genderRadios, ...avatarRadios].forEach(r =>
-    r.addEventListener('change', () => { selectedGender = detectGender(); updateHUDGender(selectedGender); })
-  );
-
-  function updateHUDGender(g){
-    if(!hudGender) return;
-    const male = (g === 'male');
-    hudGender.textContent = male ? '♂ Erkek' : '♀ Kadın';
-    hudGender.classList.toggle('-male', male);
-    hudGender.classList.toggle('-female', !male);
-  }
-
-  function skinnedWorldBBox(root) {
-    const box = new THREE.Box3();
-    root.updateMatrixWorld(true);
-    root.traverse(obj => {
-      if (!obj.isMesh) return;
-      const g = obj.geometry;
-      if (!g) return;
-      if (!g.boundingBox) g.computeBoundingBox();
-      const bb = g.boundingBox.clone();
-      bb.applyMatrix4(obj.matrixWorld);
-      box.union(bb);
-    });
-    return box;
-  }
-
+  // UI
+  const root     = document.getElementById("root");
+  const cta      = document.getElementById("cta");
+  const playBtn  = document.getElementById("playBtn");
+  const nameInput= document.getElementById("nameInput");
+  const pointsEl = document.getElementById("points");
+  const chatLog  = document.getElementById("chatLog");
+  const chatText = document.getElementById("chatText");
+  const chatSend = document.getElementById("chatSend");
+  const toast    = document.getElementById("toast");
+  const joy      = document.getElementById("joystick");
+  const stick    = document.getElementById("stick");
+  const lookpad  = document.getElementById("lookpad");
 
   const socket = io();
-
-  // ---------- Cihaz ----------
   const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
   if (joy) joy.style.display = isTouch ? "block" : "none";
 
-  // ---------- THREE ----------
+  // THREE renderer/scene/camera
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(root.clientWidth, root.clientHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   root.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -86,25 +44,27 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   dir.castShadow = true;
   scene.add(hemi, dir);
 
-  // Zemin
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(600, 600),
-    new THREE.MeshStandardMaterial({ color: 0x0c0f14, roughness: 1.0 })
-  );
+  // Ground
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x0c0f14, roughness: 1.0 });
+  groundMat.polygonOffset = true;
+  groundMat.polygonOffsetFactor = 1;
+  groundMat.polygonOffsetUnits  = 1;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), groundMat);
   ground.rotation.x = -Math.PI/2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Yıldızlar
+  // Stars
   const starGeom = new THREE.BufferGeometry();
   const starPos = [];
   for (let i=0;i<3000;i++){
     starPos.push((Math.random()-0.5)*350, 30+Math.random()*90, (Math.random()-0.5)*350);
   }
   starGeom.setAttribute("position", new THREE.Float32BufferAttribute(starPos, 3));
-  scene.add(new THREE.Points(starGeom, new THREE.PointsMaterial({ size:0.6, color:0x8cbcff })));
+  const stars = new THREE.Points(starGeom, new THREE.PointsMaterial({ size:0.6, color:0x8cbcff }));
+  scene.add(stars);
 
-  // ---------- Helpers ----------
+  // Helpers
   function makeNameSprite(label, color="#bfe4ff") {
     const padX=10, padY=6;
     const canvas = document.createElement("canvas");
@@ -123,138 +83,99 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     ctx.fillText(label, padX, 26);
     const tex = new THREE.CanvasTexture(canvas);
     tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
-    const mat = new THREE.SpriteMaterial({ map: tex, depthWrite:false, depthTest:false, transparent:true });
+    const mat = new THREE.SpriteMaterial({ map: tex, depthWrite:false, depthTest:false });
     const sp = new THREE.Sprite(mat);
     sp.renderOrder = 9999;
     sp.scale.set(w/90, h/90, 1);
     sp.position.set(0, 2.15, 0);
     return sp;
   }
-  function showToast(text){ if(!toast) return; toast.textContent=text; toast.style.display="block"; setTimeout(()=>toast.style.display="none", 1500); }
-
-  function enableShadows(root){
-    root?.traverse?.(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }});
-  }
-  function disposeGroup(g){
-    if (!g) return;
-    g.traverse(o=>{
-      if (o.isMesh){
-        o.geometry?.dispose?.();
-        if (Array.isArray(o.material)) o.material.forEach(m=>m?.dispose?.());
-        else o.material?.dispose?.();
-      }
-    });
-  }
-  function placeOnGround(obj, targetY = 0){
-    const bbox = new THREE.Box3().setFromObject(obj);
-    const minY = bbox.min.y;
-    obj.position.y += (targetY - minY);
+  function showToast(text){
+    if(!toast) return;
+    toast.textContent=text; toast.style.display="block";
+    setTimeout(()=>toast.style.display="none", 1500);
   }
 
-  // ---------- GLTF/DRACO ----------
+  // GLTF/DRACO loader
   let gltfLoader = null;
-  let baseCharGLB = null;           // cyberpunk erkek
-  let wantMaleGLB = false;          // erkek seçildiyse ve GLB henüz yoksa sonra swap
-
   try {
     gltfLoader = new GLTFLoader();
     const draco = new DRACOLoader();
-    draco.setDecoderPath('/vendor/three/examples/jsm/libs/draco/'); // sondaki / önemli
+    draco.setDecoderPath('/vendor/three/examples/jsm/libs/draco/'); // <— trailing slash şart
     gltfLoader.setDRACOLoader(draco);
   } catch (e) {
-    console.warn('[Agora] GLTFLoader init başarısız:', e);
+    console.warn('[Agora] GLTFLoader init başarısız. GLB kapalı:', e);
+    gltfLoader = null;
   }
 
-  // Karakter GLB preload
-  if (gltfLoader) {
-    gltfLoader.load('/models/readyplayermale_cyberpunk.glb', (gltf)=>{
-      baseCharGLB = gltf.scene;
-      enableShadows(baseCharGLB);
-      // Eğer kullanıcı erkek seçtiyse ve şu an stilize ise, GLB’ye geçir
-      if (wantMaleGLB && local.parts && !local.parts.isGLB) swapLocalToGLB();
-    }, undefined, (e)=>console.error('Karakter GLB preload hatası:', e));
+  // ---- NPC Yardımcıları ----
+  function worldBBox(root) {
+    const box = new THREE.Box3();
+    root.updateMatrixWorld(true);
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      const g = o.geometry;
+      if (!g) return;
+      if (!g.boundingBox) g.computeBoundingBox();
+      const bb = g.boundingBox.clone();
+      bb.applyMatrix4(o.matrixWorld);
+      box.union(bb);
+    });
+    return box;
   }
 
-  // Araba (sahne dekoru) — *karakter GLB test spawn KALDIRILDI*
-  if (gltfLoader) {
-    gltfLoader.load('/models/cyberpunk_car.glb', (g) => {
-      const car = g.scene;
-      car.scale.setScalar(0.9);
-      enableShadows(car);
-      placeOnGround(car, 0);
-      car.position.set(6, car.position.y, -6);
-      car.rotation.y = Math.PI/6;
-      scene.add(car);
-    }, undefined, (err)=>{
-      console.warn('Araba GLB yüklenemedi, placeholder konuyor:', err);
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.4,0.6,5), new THREE.MeshStandardMaterial({metalness:.6, roughness:.4, color:0x223a5a}));
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.6,0.4,24), new THREE.MeshStandardMaterial({color:0x111111}));
-      wheel.rotation.z = Math.PI/2;
-      const car = new THREE.Group();
-      car.add(body);
-      [[1.2,-0.3, 2.0],[-1.2,-0.3, 2.0],[1.2,-0.3,-2.0],[-1.2,-0.3,-2.0]].forEach(p=>{ const w = wheel.clone(); w.position.set(...p); car.add(w); });
-      placeOnGround(car, 0);
-      car.position.set(6, car.position.y, -6);
-      scene.add(car);
+  function spawnNPC(url, { x=0, z=0, y=0, ry=0, scale=null, name=null } = {}) {
+    if (!gltfLoader) { console.warn('GLTFLoader yok, NPC yüklenemez:', url); return; }
+    gltfLoader.load(url, (gltf) => {
+      const root = new THREE.Group();
+      root.name = `NPC:${url.split('/').pop()}`;
+      const model = gltf.scene || gltf.scenes?.[0];
+      if (!model) { console.warn('GLB sahnesi boş:', url); return; }
+
+      model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }});
+
+      if (scale != null) model.scale.setScalar(scale);
+
+      root.add(model);
+      scene.add(root);
+
+      // Zemine ayak bastır
+      root.updateMatrixWorld(true);
+      const bb = worldBBox(model);
+      const feet = bb.min.y;
+      model.position.y += -feet + 0.02;
+
+      // Konum, yön ve isim
+      root.position.set(x, y, z);
+      root.rotation.y = ry;
+      if (name) {
+        const tag = makeNameSprite(name);
+        tag.position.y = (bb.max.y - bb.min.y) + 0.4;
+        root.add(tag);
+      }
+
+      console.log('[NPC]', url, 'spawn @', x, z);
+    }, undefined, (err) => {
+      console.error('NPC yüklenemedi:', url, err);
     });
   }
 
-  // ---------- Karakter kurucuları ----------
-  function buildPlayerFromGLB(name = "Player") {
-    // baseCharGLB yoksa boş grup dön (çökmemek için)
-    if (!baseCharGLB) {
-      const dummy = new THREE.Group();
-      const tag = makeNameSprite(name);
-      dummy.add(tag);
-      return {
-        group: dummy, tag,
-        isGLB: true,
-        torso: { material: { color: new THREE.Color(0xffffff) } },
-        armL:null, armR:null, legL:null, legR:null
-      };
-    }
+  // === SABİT NPC'LER ===
+  // Cyberpunk karakter: sabit heykel gibi
+  spawnNPC('/models/readyplayermale_cyberpunk.glb', {
+    x: 6, z: 8, ry: -Math.PI/4, scale: 1.0, name: 'Neo Yogi'
+  });
 
-    // Kökte tek grup: hareket/rotasyon bununla yapılacak
-    const holder = new THREE.Group();
-    holder.name = 'LocalAvatarRoot';
-    holder.userData.isLocalAvatar = true;
+  // Araba: sahnenin sağ önüne
+  spawnNPC('/models/cyberpunk_car.glb', {
+    x: -8, z: 12, ry: Math.PI * 0.15, scale: 1.0, name: 'Agora Taxi'
+  });
 
-    // GLB klonu
-    const clone = baseCharGLB.clone(true);
-    enableShadows(clone);
-    holder.add(clone);
-    holder.updateMatrixWorld(true);
-
-    // Boyu normalize et + ayak tabanını y=0’a sabitle
-    const bb1 = skinnedWorldBBox(clone);
-    const height = Math.max(0.001, bb1.max.y - bb1.min.y);
-    const scale = 1.75 / height;
-    clone.scale.setScalar(scale);
-    holder.updateMatrixWorld(true);
-    const bb2 = skinnedWorldBBox(clone);
-    const feetY = bb2.min.y;
-    // Clone’u, holder localinde ayaklar 0’a oturacak şekilde yukarı it
-    clone.position.y += -feetY;
-
-    // İsim etiketi
-    const tag = makeNameSprite(name);
-    tag.position.y = 2.15; // sabit güvenli yükseklik
-    holder.add(tag);
-
-    return {
-      group: holder,
-      tag,
-      isGLB: true,
-      torso: { material: { color: new THREE.Color(0xffffff) } },
-      armL:null, armR:null, legL:null, legR:null
-    };
-  }
-
-
+  // ---- Oyuncu: Stylized mini astronot ----
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff, opts={}){
-    const scale = opts.scale ?? 0.20;
-    const legH = opts.legH ?? 0.5;
-    const legR = opts.legR ?? 0.18;
+    const scale = opts.scale ?? 0.22;
+    const legH = opts.legH ?? 0.7;
+    const legR = opts.legR ?? 0.19;
 
     const grp = new THREE.Group();
 
@@ -295,12 +216,15 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     dome.position.set(0,1.6,0); grp.add(dome);
 
     grp.scale.set(scale, scale, scale);
+    grp.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }});
     return { group: grp, torso, head, armL, armR, legL, legR: legRMesh };
   }
 
-  // ---------- Yerel & Uzak oyuncular ----------
   const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{}, gender:'female', x:0, z:0 };
-  { const parts = buildStylizedChar(0xffe4c4); local.parts = parts; scene.add(parts.group); }
+  {
+    const parts = buildStylizedChar(0xffe4c4);
+    local.parts = parts; scene.add(parts.group);
+  }
   const remotes = new Map();
 
   function updateNameTag(holder, name){
@@ -312,24 +236,15 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     holder.parts.group.add(holder.tag);
     holder.name = name;
   }
-  function getDisplayName(id){
-    if (id===local.id) return local.name || "You";
-    const R = remotes.get(id); return (R && R.name) || `Yogi-${String(id).slice(0,4)}`;
-  }
 
   function ensureRemote(p){
     let R = remotes.get(p.id);
     if (R) return R;
 
-    let parts;
-    if (p.gender === 'male' && baseCharGLB){
-      parts = buildPlayerFromGLB(p.name || `Yogi-${String(p.id).slice(0,4)}`);
-    } else {
-      const isFemale = (p.gender !== 'male');
-      const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
-      const accent  = isFemale ? 0xff3a66 : 0xffffff;
-      parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
-    }
+    const isFemale = (p.gender === 'female');
+    const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
+    const accent  = isFemale ? 0xff3a66 : 0xffffff;
+    const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
 
     parts.group.position.set(p.x||0, 0, p.z||0);
     const tag = makeNameSprite(p.name || `Yogi-${String(p.id).slice(0,4)}`);
@@ -341,133 +256,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return R;
   }
 
-  // --- Avatar swap ---
-  function swapLocalToGLB() {
-    if (!baseCharGLB) { wantMaleGLB = true; return; }
-    if (local.parts?.isGLB) return;
-
-    // Eski grubun poz/rot’unu al
-    const pos = local.parts.group.position.clone();
-    const yaw = local.parts.group.rotation.y;
-
-    // Eskiyi sök
-    scene.remove(local.parts.group);
-    disposeGroup(local.parts.group);
-
-    // GLB’li yeni grubu kur
-    const built = buildPlayerFromGLB(local.name || "You");
-    local.parts = built;
-    built.group.position.copy(pos);
-    built.group.rotation.y = yaw;
-    scene.add(built.group);
-
-    if (local.name) updateNameTag(local, local.name);
-
-    // Güvenlik: sahnede yanlışlıkla kalmış eski GLB klonlarını temizle
-    const trash = [];
-    scene.traverse(o => {
-      if (o !== built.group && o.userData && o.userData.isLocalAvatar) trash.push(o);
-    });
-    trash.forEach(o => scene.remove(o));
-  }
-
-  function swapLocalAvatar(gender='female'){
-    local.gender = gender;
-    updateHUDGender(gender);
-
-    // Erkek: GLB (varsa), yoksa stilize ve GLB gelince swap
-    if (gender === 'male') {
-      if (baseCharGLB) { swapLocalToGLB(); return; }
-      wantMaleGLB = true;
-    }
-
-    // Kadın (veya erkek GLB henüz yok): stilize
-    const prev = local.parts;
-    const pos = prev?.group?.position?.clone?.() || new THREE.Vector3(local.x||0, 0, local.z||0);
-    const yaw = local.yaw || 0;
-
-    if (prev){ scene.remove(prev.group); disposeGroup(prev.group); }
-
-    const isFemale = (gender === 'female');
-    const bodyCol = isFemale ? 0xffd7d0 : 0xffe4c4;
-    const accent  = isFemale ? 0xff3a66 : 0xffffff;
-
-    const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
-    local.parts = parts;
-    scene.add(parts.group);
-    parts.group.position.copy(pos);
-    parts.group.rotation.y = yaw;
-    if (local.name) updateNameTag(local, local.name);
-  }
-
-  // ---------- Hotspots & Planets ----------
-  const hotspotInfo = new Map();
-  const _spaceBaseHotspotMeshes = new Map();
-  function _createSpaceBaseDiscMesh(radius, opts = {}) {
-    const params = {
-      tilesPerUnit: 2.8, groove: 0.03, bevel: 0.015, stripeDensity: 7.0, emissiveK: 1.35,
-      caution: new THREE.Color("#ffd166"), baseColor: 0x131a24, ...opts
-    };
-    const mat = new THREE.MeshStandardMaterial({ color: params.baseColor, roughness: 0.95, metalness: 0.08 });
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = { value: 0 };
-      shader.uniforms.uTiles = { value: params.tilesPerUnit };
-      shader.uniforms.uGroove = { value: params.groove };
-      shader.uniforms.uBevel = { value: params.bevel };
-      shader.uniforms.uStripeDensity = { value: params.stripeDensity };
-      shader.uniforms.uEmissiveK = { value: params.emissiveK };
-      shader.uniforms.uCaution = { value: params.caution };
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;`)
-        .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>\nvec4 wp4 = modelMatrix * vec4( transformed, 1.0 );\n#ifdef USE_INSTANCING\nwp4 = instanceMatrix * wp4;\n#endif\nvWPos = wp4.xyz;`);
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nuniform float uTime,uTiles,uGroove,uBevel,uStripeDensity,uEmissiveK;\nuniform vec3 uCaution;\nfloat hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}float grooveMask(vec2 p){vec2 gv=fract(p)-0.5;vec2 dv=(0.5-abs(gv));float edge=min(dv.x,dv.y);return 1.0-smoothstep(uGroove-uBevel,uGroove+uBevel,edge);}float cautionStripes(vec2 p){vec2 cell=floor(p);vec2 gv=fract(p)-0.5;float rnd=hash21(cell);if(rnd<0.66)return 0.0;float dens=uStripeDensity+floor(rnd*3.0);float dir=(rnd>0.82)?1.0:-1.0;float ramp=(abs(gv.x)>abs(gv.y))?gv.y:gv.x;float s=fract(ramp*dens+(uTime*0.28)*dir);float bar=step(0.5,s);float edgeBand=smoothstep(0.12,0.10,min(0.5-abs(gv.x),0.5-abs(gv.y)));return bar*edgeBand;}`);
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <map_fragment>', `#include <map_fragment>\nvec2 p=vWPos.xz*uTiles;float g=grooveMask(p);diffuseColor.rgb*= (1.0 - g*0.18);float s=cautionStripes(p);float pulse=0.6+0.4*sin(uTime*3.0+(p.x+p.y));vec3 emiss=uCaution*(s*uEmissiveK*pulse);diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*0.75+uCaution*0.25,s*0.85);diffuseColor.rgb+=emiss;`);
-      mat.userData._shader = shader;
-    };
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 96), mat);
-    disc.rotation.x = -Math.PI/2; disc.position.y = 0.01; disc.receiveShadow = true;
-    const ring = new THREE.Mesh(new THREE.RingGeometry(radius*0.94, radius*1.02, 128),
-      new THREE.MeshBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.55, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false }));
-    ring.rotation.x = -Math.PI/2; ring.position.y = 0.015;
-    const group = new THREE.Group(); group.add(disc, ring);
-    group.onBeforeRender = () => {
-      const t = performance.now()*0.001;
-      const sh = disc.material.userData._shader; if (sh) sh.uniforms.uTime.value = t;
-      ring.material.opacity = 0.35 + 0.35*(0.5+0.5*Math.sin(t*2.6));
-    };
-    return group;
-  }
-  function addHotspotDisk(name, x, z, r){
-    const prev = _spaceBaseHotspotMeshes.get(name);
-    if (prev) { scene.remove(prev); prev.traverse(o=>{ if (o.isMesh){ o.geometry.dispose(); o.material.dispose?.(); } }); }
-    const grp = _createSpaceBaseDiscMesh(r);
-    grp.position.set(x, 0, z);
-    scene.add(grp);
-    _spaceBaseHotspotMeshes.set(name, grp);
-    hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
-  }
-
-  const planetMeshes = [];
-  const moonTex = new THREE.TextureLoader().load("https://happy358.github.io/Images/textures/lunar_color.jpg", t=>{ t.colorSpace = THREE.SRGBColorSpace; });
-  const PLANET_SIZE_MUL = 1.8;
-  function addPlanet(p){
-    const R = (p.radius || 20) * (p.scale || PLANET_SIZE_MUL);
-    const geo = new THREE.SphereGeometry(R, 48, 48);
-    const mat = new THREE.MeshPhongMaterial({ color: p.color, map: moonTex, bumpMap: moonTex, bumpScale: 0.6 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(p.x, R + 0.1, p.z);
-    mesh.rotation.x = -Math.PI/10;
-    mesh.castShadow = true; mesh.receiveShadow = true;
-    const label = makeNameSprite(p.name, "#9ef"); label.position.set(0, R + 0.8, 0);
-    mesh.add(label);
-    scene.add(mesh);
-    planetMeshes.push({ name: p.name, mesh, label, R });
-    hotspotInfo.set(`Planet:${p.name}`, { pos: new THREE.Vector3(p.x, 0, p.z), r: (p.r ? p.r * (p.scale || PLANET_SIZE_MUL) : (R + 10)) });
-  }
-
-  // ---------- Input ----------
+  // Input
   const keys = new Set();
   let chatFocus = false;
 
@@ -484,15 +273,14 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   });
   window.addEventListener("keyup", (e)=> keys.delete(e.code));
 
-  // Pointer-lock look
+  // Pointer-lock look (desktop)
   if (playBtn) playBtn.addEventListener("click", () => {
     const desired = (nameInput?.value||"").trim().slice(0,20);
     if (desired) { local.name = desired; if (local.tag) updateNameTag(local, desired); }
 
-    selectedGender = detectGender();
-    swapLocalAvatar(selectedGender);          // erkekse GLB (varsa), değilse stilize
-    socket.emit("profile:update", { name: desired || undefined, gender: selectedGender });
-    socket.emit("join", { name: desired || undefined, gender: selectedGender });
+    // Oyuncu hep mini astronot — GLB’ye swap YOK
+    socket.emit("profile:update", { name: desired || undefined, gender: 'female' });
+    socket.emit("join", { name: desired || undefined, gender: 'female' });
 
     if (cta) cta.style.display = "none";
     renderer.domElement.requestPointerLock();
@@ -526,7 +314,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   // Zoom
   let camDist = 3.6;
   window.addEventListener("wheel", (e)=>{
-    camDist = Math.min(10, Math.max(2, camDist + e.deltaY * 0.002));
+    camDist += e.deltaY * 0.002;
+    camDist = Math.min(10, Math.max(2, camDist));
   }, {passive:true});
 
   // Mobile joystick
@@ -553,7 +342,162 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     joy.addEventListener("touchend", joyReset);
   }
 
-  // ---------- Sockets ----------
+  // Hotspots & Planets (HALO yok)
+  const hotspotInfo = new Map();
+  const _spaceBaseHotspotMeshes = new Map();
+
+  function _createSpaceBaseDiscMesh(radius, opts = {}) {
+    const params = {
+      tilesPerUnit: 2.8,
+      groove: 0.03,
+      bevel: 0.015,
+      stripeDensity: 7.0,
+      emissiveK: 1.35,
+      caution: new THREE.Color("#ffd166"),
+      baseColor: 0x131a24,
+      ...opts
+    };
+
+    const mat = new THREE.MeshStandardMaterial({ color: params.baseColor, roughness: 0.95, metalness: 0.08 });
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.uniforms.uTiles = { value: params.tilesPerUnit };
+      shader.uniforms.uGroove = { value: params.groove };
+      shader.uniforms.uBevel = { value: params.bevel };
+      shader.uniforms.uStripeDensity = { value: params.stripeDensity };
+      shader.uniforms.uEmissiveK = { value: params.emissiveK };
+      shader.uniforms.uCaution = { value: params.caution };
+
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;`)
+        .replace('#include <worldpos_vertex>', `
+          #include <worldpos_vertex>
+          vec4 wp4 = modelMatrix * vec4( transformed, 1.0 );
+          #ifdef USE_INSTANCING
+            wp4 = instanceMatrix * wp4;
+          #endif
+          vWPos = wp4.xyz;
+        `);
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `
+          #include <common>
+          varying vec3 vWPos;
+          uniform float uTime, uTiles, uGroove, uBevel, uStripeDensity, uEmissiveK;
+          uniform vec3 uCaution;
+
+          float hash21(vec2 p){
+            p = fract(p*vec2(123.34,456.21));
+            p += dot(p, p+45.32);
+            return fract(p.x*p.y);
+          }
+          float grooveMask(vec2 p){
+            vec2 gv = fract(p) - 0.5;
+            vec2 dv = (0.5 - abs(gv));
+            float edge = min(dv.x, dv.y);
+            return 1.0 - smoothstep(uGroove-uBevel, uGroove+uBevel, edge);
+          }
+          float cautionStripes(vec2 p){
+            vec2 cell = floor(p);
+            vec2 gv = fract(p) - 0.5;
+            float rnd = hash21(cell);
+            if (rnd < 0.66) return 0.0;
+            float dens = uStripeDensity + floor(rnd*3.0);
+            float dir = (rnd>0.82)? 1.0 : -1.0;
+            float ramp = (abs(gv.x)>abs(gv.y)) ? gv.y : gv.x;
+            float s = fract(ramp*dens + (uTime*0.28)*dir);
+            float bar = step(0.5, s);
+            float edgeBand = smoothstep(0.12, 0.10, min(0.5-abs(gv.x), 0.5-abs(gv.y)));
+            return bar * edgeBand;
+          }
+        `)
+        .replace('#include <map_fragment>', `
+          #include <map_fragment>
+          vec2 p = vWPos.xz * uTiles;
+
+          float g = grooveMask(p);
+          diffuseColor.rgb *= (1.0 - g*0.18);
+
+          float s = cautionStripes(p);
+          float pulse = 0.6 + 0.4 * sin(uTime*3.0 + (p.x+p.y));
+          vec3 emiss = uCaution * (s * uEmissiveK * pulse);
+
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*0.75 + uCaution*0.25, s*0.85);
+          diffuseColor.rgb += emiss;
+        `);
+
+      mat.userData._shader = shader;
+    };
+
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 96), mat);
+    disc.rotation.x = -Math.PI/2;
+    disc.position.y = 0.01;
+    disc.receiveShadow = true;
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius*0.94, radius*1.02, 128),
+      new THREE.MeshBasicMaterial({
+        color: 0x66ccff,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = 0.015;
+
+    const group = new THREE.Group();
+    group.add(disc, ring);
+
+    group.onBeforeRender = () => {
+      const t = performance.now()*0.001;
+      const sh = disc.material.userData._shader;
+      if (sh) sh.uniforms.uTime.value = t;
+      ring.material.opacity = 0.35 + 0.35*(0.5+0.5*Math.sin(t*2.6));
+    };
+
+    return group;
+  }
+
+  function addHotspotDisk(name, x, z, r){
+    const prev = _spaceBaseHotspotMeshes.get(name);
+    if (prev) {
+      scene.remove(prev);
+      prev.traverse(o=>{ if (o.isMesh){ o.geometry.dispose(); o.material.dispose?.(); }});
+    }
+
+    const grp = _createSpaceBaseDiscMesh(r);
+    grp.position.set(x, 0, z);
+    scene.add(grp);
+
+    _spaceBaseHotspotMeshes.set(name, grp);
+    hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
+  }
+
+  const planetMeshes = [];
+  const moonTex = new THREE.TextureLoader().load("https://happy358.github.io/Images/textures/lunar_color.jpg", t=>{ t.colorSpace = THREE.SRGBColorSpace; });
+  const PLANET_SIZE_MUL = 1.8;
+
+  function addPlanet(p){
+    const R = (p.radius || 20) * (p.scale || PLANET_SIZE_MUL);
+    const geo = new THREE.SphereGeometry(R, 48, 48);
+    const mat = new THREE.MeshPhongMaterial({ color: p.color, map: moonTex, bumpMap: moonTex, bumpScale: 0.6 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(p.x, R + 0.1, p.z);
+    mesh.rotation.x = -Math.PI/10;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const label = makeNameSprite(p.name, "#9ef");
+    label.position.set(0, R + 0.8, 0);
+    mesh.add(label);
+    scene.add(mesh);
+    planetMeshes.push({ name: p.name, mesh, label, R });
+    hotspotInfo.set(`Planet:${p.name}`, { pos: new THREE.Vector3(p.x, 0, p.z), r: (p.r ? p.r * (p.scale || PLANET_SIZE_MUL) : (R + 10)) });
+  }
+
+  // Sockets
   socket.on("bootstrap", ({ you, players, hotspots, planets }) => {
     local.id = you.id;
     local.name = you.name;
@@ -562,15 +506,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
     local.x = you.x; local.z = you.z; local.yaw = you.ry || 0;
 
-    if (you.gender === 'female' || you.gender === 'male') {
-      selectedGender = you.gender;
-      updateHUDGender(selectedGender);
-    }
-    swapLocalAvatar(selectedGender);
-
+    // Astronot (yerel)
     local.parts.group.position.set(local.x, 0, local.z);
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
+    // Pad/hotspot
     const PAD_KEYWORDS = ["totem","spawn","pad","platform","agora","hub","dock","deck"];
     let padCount = 0;
 
@@ -588,7 +528,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
 
     (planets || []).forEach(addPlanet);
-    (players || []).forEach(p => { if (p.id!==local.id){ const R = ensureRemote(p); updateNameTag(R, p.name || R.name); }});
+    (players || []).forEach(p => {
+      const R = ensureRemote(p);
+      updateNameTag(R, p.name || R.name);
+    });
   });
 
   socket.on("player-joined", (p) => {
@@ -604,8 +547,12 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   });
 
   socket.on("player:name", ({id,name}) => {
-    if (id === local.id){ local.name = name; updateNameTag(local, name); }
-    const R = remotes.get(id); if (R) updateNameTag(R, name);
+    if (id === local.id){
+      local.name = name;
+      updateNameTag(local, name);
+    }
+    const R = remotes.get(id);
+    if (R) updateNameTag(R, name);
   });
 
   socket.on("chat:msg", ({ from, text }) => {
@@ -622,37 +569,68 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     showToast(`${delta>0?'+':''}${delta}  ${reason}`);
   });
 
-  socket.on("quest:update", ({code, progress, goal}) => showToast(`Görev: ${code} ${progress}/${goal}`));
+  socket.on("quest:update", ({code, progress, goal}) =>
+    showToast(`Görev: ${code} ${progress}/${goal}`)
+  );
 
-  // Emote — GLB için güvenli (opsiyonel zincir)
+  // Emote animasyonları (astronot)
   const emoteTokens = new Map();
   function resetPose(parts){
-    parts.armL?.rotation?.set?.(0,0,-Math.PI/8);
-    parts.armR?.rotation?.set?.(0,0, Math.PI/8);
-    parts.legL?.rotation?.set?.(0,0,0);
-    parts.legR?.rotation?.set?.(0,0,0);
-    parts.torso?.rotation?.set?.(0,0,0);
+    parts.armL.rotation.set(0,0,-Math.PI/8);
+    parts.armR.rotation.set(0,0, Math.PI/8);
+    parts.legL.rotation.set(0,0,0);
+    parts.legR.rotation.set(0,0,0);
+    parts.torso.rotation.set(0,0,0);
     parts.group.position.y = 0;
   }
   function playEmote(parts, id, type, ms=1200){
-    const baseColor = parts.torso?.material?.color?.clone?.() || new THREE.Color(0xffffff);
-    const token = (emoteTokens.get(id) || 0) + 1; emoteTokens.set(id, token);
+    const baseColor = parts.torso.material.color.clone();
+    const token = (emoteTokens.get(id) || 0) + 1;
+    emoteTokens.set(id, token);
     const t0 = performance.now();
-    const fns = {
-      wave(t){ const k=Math.sin((t-t0)/130); parts.armR && (parts.armR.rotation.x=-0.6+0.4*Math.sin((t-t0)/90), parts.armR.rotation.z=0.8+0.1*k); parts.torso && (parts.torso.rotation.y=0.1*k); },
-      dance(t){ const k=Math.sin((t-t0)/160); parts.group.position.y=0.08*Math.max(0,Math.sin((t-t0)/120)); parts.torso && (parts.torso.rotation.z=0.25*k); if (parts.armL){ parts.armL.rotation.x=0.6*k; } if (parts.armR){ parts.armR.rotation.x=-0.6*k; } },
-      sit(){ if (parts.legL){ parts.legL.rotation.x=-1.0; } if (parts.legR){ parts.legR.rotation.x=-1.0; } parts.torso && (parts.torso.rotation.x=-0.3); parts.group.position.y=-0.2; },
-      clap(t){ const k=0.6+0.6*Math.sin((t-t0)/90); if (parts.armL && parts.armR){ parts.armL.rotation.x=0.2; parts.armR.rotation.x=0.2; parts.armL.rotation.y=0.8*k; parts.armR.rotation.y=-0.8*k; } parts.torso && (parts.torso.rotation.y=0.05*Math.sin((t-t0)/120)); },
-      point(){ if (parts.armR){ parts.armR.rotation.x=-1.2; parts.armR.rotation.y=0.3; } parts.torso && (parts.torso.rotation.y=0.15, parts.torso.rotation.x=-0.1); },
-      cheer(t){ const k=Math.sin((t-t0)/110); if (parts.armL && parts.armR){ parts.armL.rotation.x=-1.6; parts.armR.rotation.x=-1.6; } parts.group.position.y=0.10*Math.max(0,k); }
-    };
-    const fn = fns[type] || fns.dance;
+
+    function wave(t){
+      const k = Math.sin((t-t0)/130);
+      parts.armR.rotation.x = -0.6 + 0.4*Math.sin((t-t0)/90);
+      parts.armR.rotation.z =  0.8 + 0.1*k;
+      parts.torso.rotation.y =  0.1*k;
+    }
+    function dance(t){
+      const k = Math.sin((t-t0)/160);
+      parts.group.position.y = 0.08*Math.max(0, Math.sin((t-t0)/120));
+      parts.torso.rotation.z = 0.25*k;
+      parts.armL.rotation.x = 0.6*k; parts.armR.rotation.x = -0.6*k;
+    }
+    function sit(t){
+      parts.legL.rotation.x = -1.0; parts.legR.rotation.x = -1.0;
+      parts.torso.rotation.x = -0.3;
+      parts.group.position.y = -0.2;
+    }
+    function clap(t){
+      const k = 0.6 + 0.6*Math.sin((t-t0)/90);
+      parts.armL.rotation.x = 0.2; parts.armR.rotation.x = 0.2;
+      parts.armL.rotation.y = 0.8*k; parts.armR.rotation.y = -0.8*k;
+      parts.torso.rotation.y = 0.05*Math.sin((t-t0)/120);
+    }
+    function point(t){
+      parts.armR.rotation.x = -1.2; parts.armR.rotation.y = 0.3;
+      parts.torso.rotation.y = 0.15; parts.torso.rotation.x = -0.1;
+    }
+    function cheer(t){
+      const k = Math.sin((t-t0)/110);
+      parts.armL.rotation.x = -1.6; parts.armR.rotation.x = -1.6;
+      parts.group.position.y = 0.10*Math.max(0, k);
+    }
+
+    const fn = { wave, dance, sit, clap, point, cheer }[type] || dance;
+
     (function anim(){
-      if (emoteTokens.get(id) !== token) { parts.torso?.material?.color?.copy?.(baseColor); resetPose(parts); return; }
+      if (emoteTokens.get(id) !== token) { parts.torso.material.color.copy(baseColor); resetPose(parts); return; }
       const t = performance.now();
+      const done = (t - t0) / ms;
       fn(t);
-      parts.torso?.material?.color?.lerp?.(new THREE.Color(0x66ccff), 0.15);
-      if ((t - t0) >= ms) { parts.torso?.material?.color?.copy?.(baseColor); resetPose(parts); return; }
+      parts.torso.material.color.lerp(new THREE.Color(0x66ccff), 0.15);
+      if (done >= 1) { parts.torso.material.color.copy(baseColor); resetPose(parts); return; }
       requestAnimationFrame(anim);
     })();
   }
@@ -661,8 +639,9 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     const target = (id===local.id) ? { parts: local.parts } : remotes.get(id);
     if (!target) return;
     const p = document.createElement("p");
-    p.innerHTML = `<i style="opacity:.8">[emote] ${getDisplayName(id)}: /${type}</i>`;
+    p.innerHTML = `<i style="opacity:.8">[emote] ${ (id===local.id ? (local.name||'You') : (target.name||'Player')) }: /${type}</i>`;
     chatLog?.appendChild(p); chatLog && (chatLog.scrollTop = chatLog.scrollHeight);
+
     playEmote(target.parts, id, type, Math.max(700, Math.min(1600, (until ? (until - Date.now()) : 1200))));
   });
 
@@ -673,22 +652,14 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       R.parts.group.position.lerp(new THREE.Vector3(p.x,0,p.z), 0.2);
       if (typeof p.ry === "number") R.parts.group.rotation.y = THREE.MathUtils.lerp(R.parts.group.rotation.y, p.ry, 0.2);
       if (R.name !== p.name && p.name) updateNameTag(R, p.name);
-
-      // Uzak oyuncu gender değişimi
       if (p.gender && p.gender !== R.gender){
         const pos = R.parts.group.position.clone();
-        const yaw = R.parts.group.rotation.y;
-        scene.remove(R.parts.group); disposeGroup(R.parts.group);
-        let parts;
-        if (p.gender === 'male' && baseCharGLB) parts = buildPlayerFromGLB(R.name);
-        else {
-          const isFemale = (p.gender !== 'male');
-          const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
-          const accent  = isFemale ? 0xff3a66 : 0xffffff;
-          parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
-        }
+        scene.remove(R.parts.group);
+        const isFemale = (p.gender==='female');
+        const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
+        const accent  = isFemale ? 0xff3a66 : 0xffffff;
+        const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
         parts.group.position.copy(pos);
-        parts.group.rotation.y = yaw;
         parts.group.add(R.tag);
         scene.add(parts.group);
         R.parts = parts; R.gender = p.gender;
@@ -696,7 +667,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     });
   });
 
-  // ---------- Loop ----------
+  // Loop
   let last = performance.now();
   let netAcc = 0;
   const speedWalk = 3.2, speedRun = 6;
@@ -712,32 +683,37 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function tick(now){
     const dt = Math.min(0.05, (now-last)/1000); last = now;
 
-    // hareket
+    // Movement
     const kForward = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0);
-    const kStrafe  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0);
-    let forward = Math.max(-1, Math.min(1, kForward + (joyVec.y||0)));
-    let strafe  = Math.max(-1, Math.min(1, kStrafe  + (joyVec.x||0)));
+    const kStrafeKB  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0);
+    let forward = kForward + (joyVec.y||0);
+    let strafe  = kStrafeKB + (joyVec.x||0);
+    forward = Math.max(-1, Math.min(1, forward));
+    strafe  = Math.max(-1, Math.min(1, strafe));
 
     const mag = Math.hypot(strafe,forward) || 1;
     const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (mag>1 ? 1/mag : 1);
+
     if (forward || strafe) {
       const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
-      local.parts.group.position.x += (forward * sin - strafe * cos) * spd * dt;
-      local.parts.group.position.z += (forward * cos + strafe * sin) * spd * dt;
+      const dx = forward * sin - strafe * cos;
+      const dz = forward * cos + strafe * sin;
+      local.parts.group.position.x += dx * spd * dt;
+      local.parts.group.position.z += dz * spd * dt;
     }
 
     local.parts.group.rotation.y = local.yaw;
 
-    // kamera
+    // Camera follow
     const camX = local.parts.group.position.x - Math.sin(local.yaw) * camDist;
     const camZ = local.parts.group.position.z - Math.cos(local.yaw) * camDist;
     camera.position.lerp(new THREE.Vector3(camX, 2.0, camZ), 0.15);
     camera.lookAt(local.parts.group.position.x, local.parts.group.position.y + 0.8, local.parts.group.position.z);
 
-    // gezegenler
+    // Planets
     for (const p of planetMeshes) p.mesh.rotation.y -= 0.0012;
 
-    // ağ güncellemesi
+    // Net sync
     netAcc += dt;
     if (netAcc > 0.08 && local.id) {
       netAcc = 0;
@@ -750,15 +726,16 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
   requestAnimationFrame(tick);
 
-  // ---------- Resize ----------
+  // Resize
   window.addEventListener("resize", ()=>{
     renderer.setSize(root.clientWidth, root.clientHeight);
     camera.aspect = root.clientWidth / root.clientHeight;
     camera.updateProjectionMatrix();
   });
 
-  // ---------- Chat ----------
+  // Chat
   function sendChat(){ const t = chatText?.value.trim(); if (!t) return; socket.emit("chat:send", { text:t }); chatText.value=""; }
   chatSend?.addEventListener("click", sendChat);
   chatText?.addEventListener("keydown", (e)=>{ if (e.key === "Enter") sendChat(); });
+
 })();
