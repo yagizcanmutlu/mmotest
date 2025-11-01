@@ -494,7 +494,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const PLANET_SIZE_MUL = 1.8;
       // --- Ayarlar (PLANETLER) ---
   const PLANET_DIST_MUL = 1.75;   // Uzaklık çarpanı (x,z'i ölçekler)
-  const PLANET_ALTITUDE = 8.0;    // Gezegenleri pad’den yukarı kaldırma (metre)
+  const PLANET_ALTITUDE = 6.0;    // Gezegenleri pad’den yukarı kaldırma (metre)
 
 
   function addPlanet(p){
