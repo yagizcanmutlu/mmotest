@@ -160,7 +160,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       avatarGLB = gltf.scene;
 
       // Hedef boyu m cinsinden ver (1.30–1.45 iyi aralık)
-      const ALIOBA_TARGET_HEIGHT = 1.35;
+      const ALIOBA_TARGET_HEIGHT = 0.70;
       installAvatarRoot(avatarGLB, ALIOBA_TARGET_HEIGHT);
 
       buildActionsFromClips(avatarGLB, gltf.animations || []);
