@@ -84,46 +84,98 @@ function attachAvatarToLocal(root, clips, opts={}) {
 }
 
 // GLB yükle
-function loadCustomAvatar(nft) {
-  return new Promise((resolve, reject) => {
-    if (!nft || !nft.glbUrl) {
-      console.warn('[AVATAR] nft.glbUrl yok, astronotla devam.');
-      return resolve(false);
-    }
+async function loadCustomAvatar(incoming) {
+  const url = (typeof incoming === 'string')
+    ? incoming
+    : (incoming?.glbUrl || incoming?.modelUrl || incoming?.glb || incoming?.url);
 
-    console.log('[AVATAR] loading GLB:', nft.glbUrl);
+  if (!url) { console.warn('[Avatar] GLB URL yok:', incoming); return false; }
 
-    const loader = new GLTFLoader();
-    // KTX2 desteği (olmasa da sorun değil)
-    try {
-      const ktx2 = new KTX2Loader().setTranscoderPath('/vendor/three/examples/jsm/libs/basis/').detectSupport(renderer);
-      loader.setKTX2Loader(ktx2);
-    } catch (_) {}
+  return new Promise((resolve) => {
+    gltfLoader.load(url, (gltf) => {
+      const root = gltf.scene || gltf.scenes?.[0];
+      if (!root) { console.warn('[Avatar] GLTF scene yok'); resolve(false); return; }
 
-    loader.load(
-      nft.glbUrl,
-      (gltf) => {
-        const root = gltf.scene || gltf.scenes?.[0];
-        if (!root) { reject(new Error('GLB sahnesi boş')); return; }
+      // Eski gövdeyi sahneden kaldır
+      const prev = local.parts?.group;
+      const nameTag = local.tag;
+      if (prev) scene.remove(prev);
 
-        // güvenli materyal
-        sanitizeMaterials(root);
-
-        // animasyonları içeri al
-        const clips = gltf.animations || [];
-        attachAvatarToLocal(root, clips, { targetHeight: 1.6 });
-
-        resolve(true);
-      },
-      undefined,
-      (err) => {
-        console.error('[AVATAR] GLB yükleme hatası:', err);
-        toast && (toast.textContent = 'Avatar yüklenemedi'); 
-        toast && (toast.style.display='block');
-        setTimeout(()=>toast&&(toast.style.display='none'), 1800);
-        resolve(false); // astronota düş
+      // Materyalleri WebGL güvenli hale getir
+      function toStandard(m) {
+        if (!m) return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
+        const std = new THREE.MeshStandardMaterial({
+          color: (m.color && m.color.getHex) ? m.color.getHex() : 0xffffff,
+          map: m.map || null,
+          normalMap: m.normalMap || null,
+          roughness: ('roughness' in m) ? m.roughness : 0.9,
+          metalness: ('metalness' in m) ? m.metalness : 0.0,
+          transparent: m.transparent === true,
+          alphaTest: Math.min(0.5, m.alphaTest || 0.0),
+          side: THREE.FrontSide,
+          depthWrite: true,
+          depthTest: true,
+        });
+        if (std.map) std.map.colorSpace = THREE.SRGBColorSpace;
+        return std;
       }
-    );
+
+      root.traverse(o => {
+        if (o.isMesh) {
+          o.castShadow = o.receiveShadow = true;
+          if (Array.isArray(o.material)) o.material = o.material.map(mm => toStandard(mm));
+          else o.material = toStandard(o.material);
+          if (o.material) o.material.skinning = !!o.skeleton;
+        }
+      });
+
+      // Pozisyon/ölçek
+      const scl   = incoming.scale   ?? 0.90;   // model büyükse ↓ küçült
+      const yOff  = incoming.yOffset ?? 0.00;
+      const rotY  = ('rotateY' in incoming) ? incoming.rotateY : 0;
+
+      root.scale.setScalar(scl);
+      root.position.copy(local.parts.group.position);
+      root.position.y += yOff;
+      root.rotation.y = rotY;
+
+      // İsim etiketi
+      if (nameTag) { nameTag.position.y = 1.8; root.add(nameTag); }
+
+      scene.add(root);
+      local.parts = { group: root };
+
+      // Animasyonlar
+      if (gltf.animations?.length) {
+        if (!local.mixer) local.mixer = new THREE.AnimationMixer(root);
+        else { local.mixer.stopAllAction(); local.mixer.uncacheRoot(local.mixer.getRoot()); local.mixer = new THREE.AnimationMixer(root); }
+
+        local.animClips = {};
+        for (const clip of gltf.animations) {
+          const k = clip.name.toLowerCase();
+          local.animClips[k] = clip;
+          if (/idle/i.test(k))  local.animClips.idle  = clip;
+          if (/walk/i.test(k))  local.animClips.walk  = clip;
+          if (/run(?!.*back)/i.test(k)) local.animClips.run = clip;
+          if (/clap/i.test(k))  local.animClips.clap  = clip;
+          if (/hip|dance/i.test(k)) local.animClips.dance = clip;
+        }
+
+        // varsayılan animasyon (varsa)
+        if (local.animClips.idle || local.animClips.walk) {
+          const base = local.animClips.idle || local.animClips.walk;
+          const action = local.mixer.clipAction(base);
+          action.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.2).play();
+          local.currentAction = action;
+        }
+      }
+
+      console.log('[Avatar] yüklendi →', url);
+      resolve(true);
+    }, undefined, (err) => {
+      console.error('[Avatar] GLB yükleme hatası:', err);
+      resolve(false);
+    });
   });
 }
 
@@ -166,50 +218,44 @@ function loadCustomAvatar(nft) {
   }
 
   async function startGameFromPayload({ playerName, gender = 'female', wallet = null, nft = null } = {}) {
-    // 1) İsim / cinsiyet / HUD
     const name = (playerName || '').trim() || 'Player';
     local.gender = gender;
     if (name) updateNameTag(local, name);
     setHudGender(gender);
 
-    // 2) Seçilmiş NFT’yi normalize et (string veya obje olabilir)
+    // NFT seçimini normalize et (string ya da obje)
     const selected = (() => {
-      // öncelik: payload.nft -> global cache -> null
       const raw = nft ?? window.__AGORA_SELECTED_NFT__ ?? null;
       if (!raw) return null;
-
-      if (typeof raw === 'string') return { glbUrl: raw }; // düz URL
+      if (typeof raw === 'string') return { glbUrl: raw };
       const glbUrl = raw.glbUrl || raw.modelUrl || raw.glb || raw.url || null;
       if (!glbUrl) return null;
       return { ...raw, glbUrl };
     })();
 
-    // 3) Avatarı mümkünse yükle (başarısız olursa astronot görünür)
+    console.log('[Agora] startGameFromPayload ->', { name, gender, selected });
+
+    // Avatarı arka planda yükle (UI’yi bloklamasın)
     if (selected) {
-      try {
-        const ok = await loadCustomAvatar(selected); // <- loadCustomAvatar(nftObj) bekler
-        if (!ok) console.warn('[Agora] NFT/GLB yüklenemedi:', selected.glbUrl);
-      } catch (e) {
-        console.error('[Agora] Avatar yükleme hatası:', e);
-      }
+      loadCustomAvatar(selected).catch(e => console.error('[Agora] Avatar yükleme hatası:', e));
     }
 
-    // 4) Sunucuya profil + join
     socket.emit('profile:update', { name, gender, wallet, nft: selected || nft || null });
     socket.emit('join',           { name, gender, wallet, nft: selected || nft || null });
 
-    // 5) UI geçişi + pointer lock + resize kick (0x0 framebuffer uyarısını önler)
     if (cta) cta.style.display = 'none';
     try { renderer.domElement.requestPointerLock(); } catch (e) {}
+
+    // 0x0 framebuffer uyarısını kesmek için “resize kick”
     setTimeout(() => {
       renderer.setSize(root.clientWidth, root.clientHeight);
       camera.aspect = root.clientWidth / root.clientHeight;
       camera.updateProjectionMatrix();
     }, 30);
 
-    // 6) Cache
     window.__AGORA_SELECTED_NFT__ = selected || nft || null;
   }
+
 
 
   // Seçim modalinden gelen olay (NFT Seç butonunda tetikliyorsun)
