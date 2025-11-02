@@ -143,8 +143,13 @@
     });
   </script>
 
-  <!-- === Güvenli NFT akışı (BACKEND üstünden) — client.js'ten ÖNCE === -->
+  <!-- === Güvenli NFT akışı (SEÇİM ZORUNLU) — client.js'ten ÖNCE === -->
   <script>
+    // Konfig
+    const REQUIRE_NFT_IF_AVAILABLE   = true;  // Cüzdanda NFT varsa önce seçim şart
+    const AUTO_START_AFTER_NFT_SELECT = true; // NFT seçilince oyunu otomatik başlat
+
+    // Backendi farklı bir domainden çağıracaksan doldur:
     // const BACKEND_BASE = "https://mmotest-5uut.onrender.com";
     const BACKEND_BASE = ""; // aynı origin
 
@@ -157,27 +162,39 @@
 
     // State
     let walletFromHost = null;
-    let allWalletNFTs = [];
-    let selectedNFT = null;
+    let allWalletNFTs  = [];
+    let selectedNFT    = null;
+    let hasStarted     = false;
 
     // UI refs
-    const nftModal   = document.getElementById('nftModal');
-    const nftGrid    = document.getElementById('nftGrid');
-    const walletLbl  = document.getElementById('walletLabel');
-    const useNftBtn  = document.getElementById('useNft');
-    const closeNftBtn= document.getElementById('closeNft');
-    const openNftBtn = document.getElementById('openNftSelect');
+    const nftModal     = document.getElementById('nftModal');
+    const nftGrid      = document.getElementById('nftGrid');
+    const walletLbl    = document.getElementById('walletLabel');
+    const useNftBtn    = document.getElementById('useNft');
+    const closeNftBtn  = document.getElementById('closeNft');
+    const openNftBtn   = document.getElementById('openNftSelect');
 
-    const nameInput  = document.getElementById('nameInput');
+    const nameInput    = document.getElementById('nameInput');
+    const hudGender    = document.getElementById('hudGender');
+    const genderRadios = Array.from(document.querySelectorAll('input[name="gender"]'));
 
-    const chosenMini = document.getElementById('chosenNftMini');
-    const chosenImg  = document.getElementById('chosenNftImg');
-    const chosenName = document.getElementById('chosenNftName');
-    const chosenStats= document.getElementById('chosenNftStats');
+    const chosenMini   = document.getElementById('chosenNftMini');
+    const chosenImg    = document.getElementById('chosenNftImg');
+    const chosenName   = document.getElementById('chosenNftName');
+    const chosenStats  = document.getElementById('chosenNftStats');
 
+    const playBtn      = document.getElementById('playBtn');   // giriş butonu
+    const cta          = document.getElementById('cta');       // üst kart
+
+    // Yardımcılar
     const mask = (addr)=> addr ? (addr.slice(0,4)+'…'+addr.slice(-4)) : '';
 
-    // Backend'ten NFT çek
+    function syncHudGender(){
+      const g = (genderRadios.find(r=>r.checked)?.value)||'female';
+      hudGender.textContent = g==='male' ? '♂ Erkek' : '♀ Kadın';
+      hudGender.className = g==='male' ? '-male' : '-female';
+    }
+
     async function fetchWalletNFTs(wallet){
       const clean = (wallet||'').trim().toLowerCase();
       if(!clean) return [];
@@ -191,24 +208,33 @@
       if (Array.isArray(data.records)) {
         return data.records.map(r => {
           const f = r.fields || {};
-          const img = Array.isArray(f.image) && f.image.length ? (f.image[0].url || f.image[0]) : (f.image_url || f.image);
           return {
             id: r.id,
-            name: f.nft_name_list || f.name || 'Unnamed NFT',
-            imageUrl: img || 'https://placehold.co/300x300/111/AAA?text=NFT',
-            atk: f.ap ?? f.atk ?? 50,
-            def: f.dp ?? f.def ?? 30,
-            level: f.level ?? 1,
-            crit: f.crit_chance ?? 0.2
+            name: f.nft_name_list || 'Unnamed NFT',
+            imageUrl: f.image || 'https://placehold.co/300x300/111/AAA?text=NFT',
+            atk: f.ap || 50,
+            def: f.dp || 30,
+            level: f.level || 1,
+            crit: f.crit_chance || 0.2,
+            gender: (f.gender || '').toLowerCase(),
+            // Eğer Airtable’da GLB yolu alanın varsa burada eşle:
+            modelUrl: f.model_url || f.glb || f.url || null
           };
         });
       }
       return [];
     }
 
-    // Modal helpers
-    function openModal(){ nftModal.style.display='flex'; nftModal.setAttribute('aria-hidden','false'); }
-    function closeModal(){ nftModal.style.display='none'; nftModal.setAttribute('aria-hidden','true'); }
+    function openModal(){
+      // pointer-lock varsa bırak ki tıklanabilsin
+      try { document.exitPointerLock?.(); } catch {}
+      nftModal.style.display='flex';
+      nftModal.setAttribute('aria-hidden','false');
+    }
+    function closeModal(){
+      nftModal.style.display='none';
+      nftModal.setAttribute('aria-hidden','true');
+    }
 
     function renderNFTGrid(nfts){
       nftGrid.innerHTML = '';
@@ -234,23 +260,46 @@
 
     function applyChosenNFT(){
       if(!selectedNFT) return;
-      nameInput.value = selectedNFT.name || nameInput.value;
+      nameInput.value = selectedNFT.name;
+      if(selectedNFT.gender==='male' || selectedNFT.gender==='m'){
+        genderRadios.find(r=>r.value==='male').checked = true;
+      } else if(selectedNFT.gender==='female' || selectedNFT.gender==='f'){
+        genderRadios.find(r=>r.value==='female').checked = true;
+      }
+      syncHudGender();
       chosenMini.style.display = 'flex';
-      chosenImg.src   = selectedNFT.imageUrl || '';
-      chosenName.textContent = selectedNFT.name || 'NFT';
-      chosenStats.textContent = `LVL ${selectedNFT.level ?? 1} • ATK ${selectedNFT.atk ?? 0} • DEF ${selectedNFT.def ?? 0}`;
+      chosenImg.src   = selectedNFT.imageUrl;
+      chosenName.textContent = selectedNFT.name;
+      chosenStats.textContent = `LVL ${selectedNFT.level} • ATK ${selectedNFT.atk} • DEF ${selectedNFT.def}`;
     }
 
-    // Giriş → client.js'e payload ver
-    document.getElementById('playBtn').addEventListener('click', () => {
+    function startWithPayload(){
+      if (hasStarted) return;
       const payload = {
         wallet: walletFromHost,
         nft: selectedNFT || null,
         playerName: nameInput.value.trim() || (selectedNFT ? selectedNFT.name : 'Player'),
-        gender: (document.querySelector('input[name="gender"]:checked')?.value) || 'unknown'
+        gender: genderRadios.find(r=>r.checked)?.value || 'female'
       };
       window.agoraInjectedPayload = payload;
       window.dispatchEvent(new CustomEvent('agoraInit', { detail: payload }));
+      hasStarted = true;
+      if (cta) cta.style.display = "none";
+    }
+
+    // —— GİRİŞ Butonu: NFT varsa ve seçilmediyse önce modalı aç, oyunu başlatma
+    playBtn.addEventListener('click', () => {
+      const haveNFTs = (allWalletNFTs.length > 0);
+      if (REQUIRE_NFT_IF_AVAILABLE && haveNFTs && !selectedNFT){
+        // “Giriş” yerine önce seçim
+        walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost || '');
+        renderNFTGrid(allWalletNFTs);
+        useNftBtn.disabled = true;
+        openModal();
+        return;
+      }
+      // NFT yoksa ya da seçildiyse normal başlat
+      startWithPayload();
     });
 
     // Modal kontrolleri
@@ -258,25 +307,39 @@
       if(!walletFromHost){ alert('Cüzdan adresi henüz gelmedi.'); return; }
       walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
       renderNFTGrid(allWalletNFTs);
+      useNftBtn.disabled = !selectedNFT;
       openModal();
     });
     closeNftBtn.addEventListener('click', closeModal);
-    useNftBtn.addEventListener('click', () => { applyChosenNFT(); closeModal(); });
+    useNftBtn.addEventListener('click', () => {
+      applyChosenNFT();
+      closeModal();
+      if (AUTO_START_AFTER_NFT_SELECT && !hasStarted) startWithPayload();
+    });
 
     // Host → cüzdan (Webflow embed)
     window.addEventListener('message', async (event) => {
       if(!allowedOrigins.includes(event.origin)) return;
       const msg = event.data || {};
       if(msg.type === 'walletAddress'){
-        walletFromHost = (msg.address||'').trim();
+        walletFromHost = (msg.address||'').trim().toLowerCase();
         walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
+
+        // NFT’leri çek → varsa modalı otomatik aç ve “Giriş”i beklet
         allWalletNFTs = await fetchWalletNFTs(walletFromHost);
-        if(allWalletNFTs.length === 1){
-          selectedNFT = allWalletNFTs[0];
-          applyChosenNFT();
-        } else {
+
+        if (REQUIRE_NFT_IF_AVAILABLE && allWalletNFTs.length > 0) {
+          // Oyunu kilitle: Giriş'e basılsa bile önce seçim yaptıracağız
+          useNftBtn.disabled = true;
           renderNFTGrid(allWalletNFTs);
           openModal();
+
+          // Tek NFT varsa otomatik seç + direkt başlat (isteğe bağlı)
+          if (allWalletNFTs.length === 1) {
+            selectedNFT = allWalletNFTs[0];
+            applyChosenNFT();
+            if (AUTO_START_AFTER_NFT_SELECT && !hasStarted) startWithPayload();
+          }
         }
       }
       if(msg.type === 'selectedNFT' && msg.payload){
@@ -285,21 +348,23 @@
       }
     });
 
-    // Fallback: URL ?wallet= adresinden al (yerel test için)
+    // Fallback: URL ?wallet= adresinden al (yerel test)
     (async () => {
       const u = new URL(location.href);
       const w = u.searchParams.get('wallet');
       if (w && !walletFromHost) {
-        walletFromHost = w.trim();
+        walletFromHost = w.trim().toLowerCase();
         walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
         allWalletNFTs = await fetchWalletNFTs(walletFromHost);
-        if(allWalletNFTs.length === 1){
-          selectedNFT = allWalletNFTs[0];
-          applyChosenNFT();
+        if (REQUIRE_NFT_IF_AVAILABLE && allWalletNFTs.length > 0) {
+          renderNFTGrid(allWalletNFTs);
+          openModal();
         }
       }
+      syncHudGender();
     })();
   </script>
+
 
   <!-- Sıra önemli: önce socket.io, sonra socket başlat, en sonda client.js -->
   <script src="/socket.io/socket.io.js"></script>
