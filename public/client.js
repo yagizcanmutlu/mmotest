@@ -26,41 +26,150 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
 
-  // === AGORA NFT entegrasyonu (index.html -> client.js) ===
-  const hudGenderEl = document.getElementById('hudGender');
-  function setHudGender(g) {
-    if (!hudGenderEl) return;
-    hudGenderEl.className = '';
-    if ((g||'').toLowerCase().startsWith('m')) {
-      hudGenderEl.textContent = '♂ Erkek';
-      hudGenderEl.classList.add('-male');
-    } else {
-      hudGenderEl.textContent = '♀ Kadın';
-      hudGenderEl.classList.add('-female');
-    }
-  }
+  // === CİNSİYET KALDIRILDI — yalnızca isim, wallet ve NFT ile giriş ===
+  function startGameFromPayload(pl = {}) {
+    const name   = (pl.playerName || '').trim() || 'Player';
+    const gender = pl.gender || 'unknown';
+    const wallet = pl.wallet || null;
+    const nft    = pl.nft || null;
 
-  function startGameFromPayload({ playerName, gender='female', wallet=null, nft=null } = {}) {
-    const name = (playerName || '').trim() || 'Player';
+    // 1) yerel state
     local.gender = gender;
     if (name) updateNameTag(local, name);
 
-    setHudGender(gender);
-
+    // 3) server sync
     socket.emit("profile:update", { name, gender, wallet, nft });
     socket.emit("join",           { name, gender, wallet, nft });
 
+    // 4) UI
     if (cta) cta.style.display = "none";
     try { renderer.domElement.requestPointerLock(); } catch(e){}
 
+    // 5) seçilen NFT’yi cache'le
     window.__AGORA_SELECTED_NFT__ = nft || null;
   }
 
+
+  // 1) index.html'den gelen event ile başlat
   window.addEventListener('agoraInit', (e) => {
-    const payload = e?.detail || {};
-    window.agoraInjectedPayload = payload;
-    startGameFromPayload(payload);
+    const pl = e?.detail || {};
+    window.agoraInjectedPayload = pl;     // cache
+    startGameFromPayload(pl);
   });
+
+  // 2) Fallback: Her ihtimale karşı, event gelmezse "Giriş" click'i lokal payload kurup başlatsın
+  if (playBtn) playBtn.addEventListener('click', () => {
+    // Eğer index.html zaten agoraInit yolladıysa, burada tekrar başlatma.
+    if (window.agoraInjectedPayload) return;
+
+    const desiredName = (nameInput?.value || '').trim().slice(0, 20) || 'Player';
+    // Formda gender kaldırıldıysa 'unknown' ya da 'male' ver; varsa radio’dan oku:
+    const genderInput = document.querySelector('input[name="gender"]:checked');
+    const gender = (genderInput?.value) || 'unknown';
+
+    const pl = {
+      playerName: desiredName,
+      gender,
+      wallet: window.walletFromHost || null,
+      nft: window.selectedNFT || null   // index.html bu değişkenleri set ediyorsa
+    };
+
+    window.agoraInjectedPayload = pl;
+    console.log('[fallback] payload:', pl);
+    startGameFromPayload(pl);
+  });
+
+    // === Alioba avatar (tek GLB, çoklu klip) entegrasyonu ===
+  let avatarGLB = null;         // sahnedeki gerçek GLB kökü
+  let mixer = null;             // AnimationMixer
+  let actions = {};             // { walk, run, dance, clap, idle, ... }
+  let currentAction = null;     // aktif action
+  let currentActionName = null;
+  let usingGLBAvatar = false;
+
+  function normClipName(name='') {
+    const s = name.toLowerCase();
+    if (s.includes('idle') || s.includes('stand')) return 'idle';
+    if (s.includes('back') && s.includes('run'))  return 'runBack';
+    if (s.includes('run'))                        return 'run';
+    if (s.includes('walk'))                       return 'walk';
+    if (s.includes('hip_hop') || s.includes('dance')) return 'dance';
+    if (s.includes('clap'))                       return 'clap';
+    return name.replace(/\s+/g,'_').toLowerCase();
+  }
+
+  function buildActionsFromClips(root, clips=[]) {
+    mixer = new THREE.AnimationMixer(root);
+    actions = {}; currentAction = null; currentActionName = null;
+
+    clips.forEach((clip) => {
+      const name = normClipName(clip.name || '');
+      const act  = mixer.clipAction(clip);
+      act.clampWhenFinished = false;
+      act.loop = THREE.LoopRepeat;
+      actions[name] = act;
+    });
+
+    // Idle yoksa, yürüyüşü düşük hızda "idle" gibi kullan
+    if (!actions.idle && actions.walk) {
+      actions.idle = actions.walk;
+      actions.idle.timeScale = 0.35;
+    }
+  }
+
+  function playAction(name, fade=0.18, speed=1.0) {
+    const next = actions[name];
+    if (!next) return;
+    next.enabled = true;
+    next.timeScale = speed;
+    next.reset();
+
+    if (currentAction && currentAction !== next) {
+      currentAction.crossFadeTo(next, fade, false);
+      next.play();
+    } else if (!currentAction) {
+      next.play();
+    }
+    currentAction = next;
+    currentActionName = name;
+  }
+
+  function installAvatarRoot(root, targetHeight=1.75) {
+    // Ölçek/pivot düzelt
+    root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }});
+    const bb = new THREE.Box3().setFromObject(root);
+    const size = bb.getSize(new THREE.Vector3());
+    const s = targetHeight / Math.max(size.y, 1e-6);
+    root.scale.setScalar(s);
+    const bb2 = new THREE.Box3().setFromObject(root);
+    root.position.y += -bb2.min.y + 0.02;
+
+    // Eski stylized karakteri kaldır ve local.parts.group = root olacak şekilde devret
+    if (local?.parts?.group) scene.remove(local.parts.group);
+
+    // Oyuncu objesi olarak root'u kullan
+    local.parts = { group: root };
+    scene.add(root);
+    usingGLBAvatar = true;
+  }
+
+  function swapLocalAvatarFromGLB(url) {
+    if (!gltfLoader) return;
+    gltfLoader.load(url, (gltf) => {
+      avatarGLB && scene.remove(avatarGLB);   // önceki varsa kaldır
+      avatarGLB = gltf.scene;
+
+      installAvatarRoot(avatarGLB);
+      buildActionsFromClips(avatarGLB, gltf.animations || []);
+
+      // başlangıç animasyonu
+      if (actions.idle) playAction('idle', 0.12, 1.0);
+      else if (actions.walk) playAction('walk', 0.12, 0.6);
+    }, undefined, (err) => {
+      console.error('[Alioba] GLB load error:', err);
+    });
+  }
+
 
   // === Registry & Collisions ===
   const npcRegistry = new Map();             // key -> THREE.Group (root)
@@ -68,7 +177,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const PLAYER_RADIUS = 0.45;
   const COLLISION_ENABLED = true;
 
-  const DEBUG_COLLIDERS = true;
+  const DEBUG_COLLIDERS = true;              // görünmez duvar teşhisi için
   const MAX_COLLIDER_RADIUS = 12;
   let colliderDebug = null;
 
@@ -99,7 +208,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x090a14, 20, 120);
-
   colliderDebug = new THREE.Group();
   scene.add(colliderDebug);
 
@@ -176,7 +284,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     );
   }, 2000);
 
-  // Helpers (UI + name sprites)
+  // Helpers
   function makeNameSprite(label, color="#bfe4ff") {
     const padX=10, padY=6;
     const canvas = document.createElement("canvas");
@@ -280,14 +388,16 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function getAnyPadCenter() {
     const h = hotspotInfo.get('AgoraPad');
     if (h) return h.pos.clone();
+
     if (_spaceBaseHotspotMeshes.has('AgoraPad'))
       return _spaceBaseHotspotMeshes.get('AgoraPad').position.clone();
+
     for (const [, grp] of _spaceBaseHotspotMeshes) return grp.position.clone();
     return (window.local?.parts?.group?.position?.clone?.() || new THREE.Vector3(0,0,0));
   }
 
   // ---- NPC yardımcıları ----
-  const _spawnedNPC = new Set(); // url|name anahtarıyla dedup
+  const _spawnedNPC = new Set();
 
   function computeColliderInfo(root, padding = 0.30) {
     const THIN_Y = 0.08;
@@ -383,6 +493,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         if (diag < 0.02) o.visible = false;
       });
 
+      // pivot & scale
       const bb0 = new THREE.Box3().setFromObject(model);
       const c0  = bb0.getCenter(new THREE.Vector3());
       model.position.x -= c0.x;
@@ -401,6 +512,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         model.scale.setScalar(scale);
       }
 
+      // ayaklar zemine
       const bb1 = new THREE.Box3().setFromObject(model);
       model.position.y += -bb1.min.y + 0.02;
 
@@ -425,9 +537,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       scene.add(root);
       console.log('[NPC]', url, 'spawn @', root.position);
 
+      // ==== KAYIT ====
       const regKey = name || url;
       npcRegistry.set(regKey, root);
 
+      // ==== COLLIDER (XZ dairesel) ====
       if (collision) {
         const info = computeColliderInfo(root, colliderPadding);
         const col = { key: regKey, root, r: info.r, padding: colliderPadding, offX: info.offX, offZ: info.offZ };
@@ -486,9 +600,9 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
   function resolveCollision(px, pz, nx, nz){
     if (!collidesAt(nx, nz)) return { x:nx, z:nz };
-    if (!collidesAt(nx, pz)) return { x:nx, z:pz }; // slide X
-    if (!collidesAt(px, nz)) return { x:px, z:nz }; // slide Z
-    return { x:px, z:pz }; // tamamen engelli
+    if (!collidesAt(nx, pz)) return { x:nx, z:pz };
+    if (!collidesAt(px, nz)) return { x:px, z:nz };
+    return { x:px, z:pz };
   }
 
   // ---- Oyuncu: Stylized mini astronot
@@ -540,15 +654,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return { group: grp, torso, head, armL, armR, legL, legR: legRMesh };
   }
 
-  // ======== LOCAL / REMOTE STATE ========
-  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{}, gender:'female', x:0, z:0 };
+  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{}, x:0, z:0 };
   {
     const parts = buildStylizedChar(0xffe4c4);
-    local.parts = parts;
-    scene.add(parts.group);
-
-    // >>> Başlangıçta oyuncu yüksekliğini 1.65m'e Normalize et
-    setTimeout(() => setPlayerHeight(1.65), 0);
+    local.parts = parts; scene.add(parts.group);
   }
   const remotes = new Map();
 
@@ -565,103 +674,22 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function ensureRemote(p){
     let R = remotes.get(p.id);
     if (R) return R;
-    const isFemale = (p.gender === 'female');
-    const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
-    const accent  = isFemale ? 0xff3a66 : 0xffffff;
+    // Tek tip görünüm (ileride NFT’den renk/stil türetiriz)
+    const bodyCol = 0xadd8e6;
+    const accent  = 0xffffff;
     const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
     parts.group.position.set(p.x||0, 0, p.z||0);
     const tag = makeNameSprite(p.name || `Yogi-${String(p.id).slice(0,4)}`);
     parts.group.add(tag);
-    R = { id: p.id, parts, tag, name: p.name || `Yogi-${String(p.id).slice(0,4)}`, gender: p.gender || 'female' };
+    R = { id: p.id, parts, tag, name: p.name || `Yogi-${String(p.id).slice(0,4)}` };
     scene.add(parts.group);
     remotes.set(p.id, R);
     return R;
   }
 
-  // ======== EMOTE & ORYANTASYON YARDIMCILARI (YENİ) ========
-  let stickyEmote = null; // "dance" açıkken tutulur
-
-  function faceCamera(offset = 0) {
-    if (!local?.parts?.group) return;
-    const px = local.parts.group.position.x;
-    const pz = local.parts.group.position.z;
-    const dx = camera.position.x - px;
-    const dz = camera.position.z - pz;
-    const yawToCam = Math.atan2(dx, dz);
-    local.yaw = yawToCam + offset;
-  }
-
-  function setPlayerHeight(targetMeters = 1.65) {
-    if (!local?.parts?.group) return;
-    const grp = local.parts.group;
-    const bb = new THREE.Box3().setFromObject(grp);
-    const h = Math.max(0.0001, bb.max.y - bb.min.y);
-    const s = targetMeters / h;
-    grp.scale.multiplyScalar(s);
-  }
-
-  // Emotes
-  const emoteTokens = new Map();
-  function resetPose(parts){
-    parts.armL.rotation.set(0,0,-Math.PI/8);
-    parts.armR.rotation.set(0,0, Math.PI/8);
-    parts.legL.rotation.set(0,0,0);
-    parts.legR.rotation.set(0,0,0);
-    parts.torso.rotation.set(0,0,0);
-    parts.group.position.y = 0;
-  }
-
-  function playEmote(parts, id, type, ms=1200){
-    const baseColor = parts.torso.material.color.clone();
-    const token = (emoteTokens.get(id) || 0) + 1;
-    emoteTokens.set(id, token);
-    const t0 = performance.now();
-    function wave(t){ const k = Math.sin((t-t0)/130); parts.armR.rotation.x = -0.6 + 0.4*Math.sin((t-t0)/90); parts.armR.rotation.z =  0.8 + 0.1*k; parts.torso.rotation.y =  0.1*k; }
-    function dance(t){ const k = Math.sin((t-t0)/160); parts.group.position.y = 0.08*Math.max(0, Math.sin((t-t0)/120)); parts.torso.rotation.z = 0.25*k; parts.armL.rotation.x = 0.6*k; parts.armR.rotation.x = -0.6*k; }
-    function sit(t){ parts.legL.rotation.x = -1.0; parts.legR.rotation.x = -1.0; parts.torso.rotation.x = -0.3; parts.group.position.y = -0.2; }
-    function clap(t){ const k = 0.6 + 0.6*Math.sin((t-t0)/90); parts.armL.rotation.x = 0.2; parts.armR.rotation.x = 0.2; parts.armL.rotation.y = 0.8*k; parts.armR.rotation.y = -0.8*k; parts.torso.rotation.y = 0.05*Math.sin((t-t0)/120); }
-    function point(t){ parts.armR.rotation.x = -1.2; parts.armR.rotation.y = 0.3; parts.torso.rotation.y = 0.15; parts.torso.rotation.x = -0.1; }
-    function cheer(t){ const k = Math.sin((t-t0)/110); parts.armL.rotation.x = -1.6; parts.armR.rotation.x = -1.6; parts.group.position.y = 0.10*Math.max(0, k); }
-    const fn = { wave, dance, sit, clap, point, cheer }[type] || dance;
-    (function anim(){
-      if (emoteTokens.get(id) !== token) { parts.torso.material.color.copy(baseColor); resetPose(parts); return; }
-      const t = performance.now();
-      const done = (t - t0) / ms;
-      fn(t);
-      parts.torso.material.color.lerp(new THREE.Color(0x66ccff), 0.15);
-      if (done >= 1) { parts.torso.material.color.copy(baseColor); resetPose(parts); return; }
-      requestAnimationFrame(anim);
-    })();
-  }
-
-  // Dansı toggle olarak sürekli oynatan versiyon
-  function playEmoteContinuous(parts, id, type) {
-    const base = parts.torso.material.color.clone();
-    const token = (emoteTokens.get(id) || 0) + 1;
-    emoteTokens.set(id, token);
-    const t0 = performance.now();
-    function loop() {
-      if (emoteTokens.get(id) !== token || stickyEmote !== type) {
-        parts.torso.material.color.copy(base);
-        resetPose(parts);
-        return;
-      }
-      const t = performance.now();
-      const k = Math.sin((t - t0) / 160);
-      parts.group.position.y = 0.08 * Math.max(0, Math.sin((t - t0) / 120));
-      parts.torso.rotation.z = 0.25 * k;
-      parts.armL.rotation.x = 0.6 * k;
-      parts.armR.rotation.x = -0.6 * k;
-      requestAnimationFrame(loop);
-    }
-    loop();
-  }
-
   // Input
   const keys = new Set();
   let chatFocus = false;
-
-  // Klavye olayları – GÜNCELLENMİŞ
   const MOVE_KEYS = new Set(["KeyW","KeyA","KeyS","KeyD","ShiftLeft","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
 
   document.addEventListener("keydown", (e) => {
@@ -671,40 +699,12 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       return;
     }
     if (MOVE_KEYS.has(e.code)) e.preventDefault();
-
     if (!chatFocus) {
       keys.add(e.code);
-
-      // Kameraya göre hızlı yönler
-      if (e.code === "KeyS") faceCamera(0);                 // kameraya ön
-      if (e.code === "KeyA") faceCamera(Math.PI / 2);       // sola yan
-      if (e.code === "KeyD") faceCamera(-Math.PI / 2);      // sağa yan
-
-      // Dans toggle (Digit3)
-      if (e.code === "Digit3") {
-        if (stickyEmote === "dance") {
-          stickyEmote = null; // kapat
-        } else {
-          stickyEmote = "dance"; // aç
-          playEmoteContinuous(local.parts, local.id || "local", "dance");
-        }
-        return;
-      }
-
-      // Diğer tek atımlık emote'lar
-      const once = { Digit1:"wave", Digit2:"clap", Digit4:"sit", Digit5:"point", Digit6:"cheer" };
-      if (once[e.code]) {
-        stickyEmote = null; // varsa dansı kes
-        socket.emit("emote:play", once[e.code]);
-      }
-
-      // İnce döndürme
+      const em = { Digit1:"wave", Digit2:"dance", Digit3:"sit", Digit4:"clap", Digit5:"point", Digit6:"cheer" };
+      if (em[e.code]) socket.emit("emote:play", em[e.code]);
       if (e.code === "KeyQ") local.yaw += 0.06;
       if (e.code === "KeyE") local.yaw -= 0.06;
-
-      // Anlık ölçek ayarı (+ / -)
-      if (e.code === "Equal" || e.code === "NumpadAdd")   local.parts.group.scale.multiplyScalar(1.05);
-      if (e.code === "Minus" || e.code === "NumpadSubtract") local.parts.group.scale.multiplyScalar(0.95);
     }
   }, { passive:false });
 
@@ -714,16 +714,15 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }, { passive:false });
 
   if (playBtn) playBtn.addEventListener("click", () => {
+    // NFT entegrasyonu aktifse (index.html agoraInit dispatch ettiyse) burada iş yok
     if (window.agoraInjectedPayload) return;
 
+    // ---- Fallback (NFT seçimi yoksa eski yol) ----
     const desired = (nameInput?.value||"").trim().slice(0,20);
     if (desired) { local.name = desired; if (local.tag) updateNameTag(local, desired); }
-    const formGenderEl = document.querySelector('input[name="gender"]:checked');
-    const fallbackGender = (formGenderEl?.value || 'female');
-    setHudGender(fallbackGender);
 
-    socket.emit("profile:update", { name: desired || undefined, gender: fallbackGender });
-    socket.emit("join",           { name: desired || undefined, gender: fallbackGender });
+    socket.emit("profile:update", { name: desired || undefined });
+    socket.emit("join",           { name: desired || undefined });
 
     if (cta) cta.style.display = "none";
     try { renderer.domElement.requestPointerLock(); } catch(e){}
@@ -830,9 +829,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
     local.x = you.x; local.z = you.z; local.yaw = you.ry || 0;
 
+    // Astronot (yerel)
     local.parts.group.position.set(local.x, 0, local.z);
     updateNameTag(local, local.name || `Yogi-${local.id?.slice(0,4)}`);
 
+    // Pads/hotspots
     const PAD_KEYWORDS = ["totem","spawn","pad","platform","agora","hub","dock","deck"];
     let padCount = 0;
 
@@ -849,38 +850,69 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       : new THREE.Vector3(local.parts.group.position.x, 0, local.parts.group.position.z);
     addHotspotDisk("AgoraPad", padPos.x, padPos.z, 18);
 
+    // Gezegenler
     (planets || []).forEach(p => {
       const x = (p.x || 0) * PLANET_DIST_MUL;
       const z = (p.z || 0) * PLANET_DIST_MUL;
       addPlanet({ ...p, x, z, scale: PLANET_SIZE_MUL, altitude: PLANET_ALTITUDE });
     });
 
+    // Remote players
     (players || []).forEach(p => {
       const R = ensureRemote(p);
       updateNameTag(R, p.name || R.name);
     });
 
+    // NPC’ler (bir kez)
     if (!staticSpawned) {
       staticSpawned = true;
 
       spawnNPC('/models/readyplayermale_cyberpunk.glb', {
-        onPad: true, offset: { x: -7, z: -2 }, targetHeight: 1.8, ry: Math.PI * 0.2, name: 'Neo Yogi', colliderPadding: 0.15
+        onPad: true,
+        offset: { x: -7, z: -2 },
+        targetHeight: 1.8,
+        ry: Math.PI * 0.2,
+        name: 'Neo Yogi',
+        colliderPadding: 0.15
       });
 
       spawnNPC('/models/cyberpunk_car.glb', {
-        onPad: true, offset: { x: 6, z: 1.5 }, targetDiag: 4.2, ry: -Math.PI * 0.35, name: 'Agora Taxi', colliderPadding: 0.20
+        onPad: true,
+        offset: { x: 6, z: 1.5 },
+        targetDiag: 4.2,
+        ry: -Math.PI * 0.35,
+        name: 'Agora Taxi',
+        colliderPadding: 0.20
       });
 
       {
         const c = getAnyPadCenter();
         spawnNPC('/models/futuristic_pyramid_cityscape.glb', {
-          onPad: false, x: c.x + 32, z: c.z - 18, y: 0.0, ry: -Math.PI * 5, targetDiag: 5, name: 'Pyramid City', collision: false
+          onPad: false,
+          x: c.x + 32,
+          z: c.z - 18,
+          y: 0.0,
+          ry: -Math.PI * 5,
+          targetDiag: 5,
+          name: 'Pyramid City',
+          collision: false
         });
       }
 
       spawnNPC('/models/sci-fi_modular_stack_asset.glb', {
-        onPad: true, offset: { x: -12, z: 9 }, targetDiag: 14, y: 0.0, ry: Math.PI * 0.1, name: 'Stack Module', colliderPadding: 0.25
+        onPad: true,
+        offset: { x: -12, z: 9 },
+        targetDiag: 14,
+        y: 0.0,
+        ry: Math.PI * 0.1,
+        name: 'Stack Module',
+        colliderPadding: 0.25
       });
+
+      swapLocalAvatarFromGLB('/models/alioba/Alioba_Merged_Animations.glb');
+
+
+      // window.AGORALazy.register({ name:'props-zone-1', x: padPos.x + 28, z: padPos.z, url:'/models/props_pack.glb', dist:30, unload:true });
     }
   });
 
@@ -920,6 +952,46 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     showToast(`Görev: ${code} ${progress}/${goal}`)
   );
 
+  // Emotes
+  const emoteTokens = new Map();
+  function resetPose(parts){
+    parts.armL.rotation.set(0,0,-Math.PI/8);
+    parts.armR.rotation.set(0,0, Math.PI/8);
+    parts.legL.rotation.set(0,0,0);
+    parts.legR.rotation.set(0,0,0);
+    parts.torso.rotation.set(0,0,0);
+    parts.group.position.y = 0;
+  }
+  function playEmote(parts, id, type, ms=1200){
+        // GLB avatar kullanıyorsak emote'ları uygun kliplere map'le
+    if (usingGLBAvatar) {
+      if (type === 'dance' && actions.dance) playAction('dance', 0.12, 1.0);
+      else if (type === 'clap' && actions.clap) playAction('clap', 0.12, 1.0);
+      return; // stylized kemik dönüşlerini atla
+    }
+
+    const baseColor = parts.torso.material.color.clone();
+    const token = (emoteTokens.get(id) || 0) + 1;
+    emoteTokens.set(id, token);
+    const t0 = performance.now();
+    function wave(t){ const k = Math.sin((t-t0)/130); parts.armR.rotation.x = -0.6 + 0.4*Math.sin((t-t0)/90); parts.armR.rotation.z =  0.8 + 0.1*k; parts.torso.rotation.y =  0.1*k; }
+    function dance(t){ const k = Math.sin((t-t0)/160); parts.group.position.y = 0.08*Math.max(0, Math.sin((t-t0)/120)); parts.torso.rotation.z = 0.25*k; parts.armL.rotation.x = 0.6*k; parts.armR.rotation.x = -0.6*k; }
+    function sit(t){ parts.legL.rotation.x = -1.0; parts.legR.rotation.x = -1.0; parts.torso.rotation.x = -0.3; parts.group.position.y = -0.2; }
+    function clap(t){ const k = 0.6 + 0.6*Math.sin((t-t0)/90); parts.armL.rotation.x = 0.2; parts.armR.rotation.x = 0.2; parts.armL.rotation.y = 0.8*k; parts.armR.rotation.y = -0.8*k; parts.torso.rotation.y = 0.05*Math.sin((t-t0)/120); }
+    function point(t){ parts.armR.rotation.x = -1.2; parts.armR.rotation.y = 0.3; parts.torso.rotation.y = 0.15; parts.torso.rotation.x = -0.1; }
+    function cheer(t){ const k = Math.sin((t-t0)/110); parts.armL.rotation.x = -1.6; parts.armR.rotation.x = -1.6; parts.group.position.y = 0.10*Math.max(0, k); }
+    const fn = { wave, dance, sit, clap, point, cheer }[type] || dance;
+    (function anim(){
+      if (emoteTokens.get(id) !== token) { parts.torso.material.color.copy(baseColor); resetPose(parts); return; }
+      const t = performance.now();
+      const done = (t - t0) / ms;
+      fn(t);
+      parts.torso.material.color.lerp(new THREE.Color(0x66ccff), 0.15);
+      if (done >= 1) { parts.torso.material.color.copy(baseColor); resetPose(parts); return; }
+      requestAnimationFrame(anim);
+    })();
+  }
+
   socket.on("emote", ({ id, type, until }) => {
     const target = (id===local.id) ? { parts: local.parts } : remotes.get(id);
     if (!target) return;
@@ -936,18 +1008,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       R.parts.group.position.lerp(new THREE.Vector3(p.x,0,p.z), 0.2);
       if (typeof p.ry === "number") R.parts.group.rotation.y = THREE.MathUtils.lerp(R.parts.group.rotation.y, p.ry, 0.2);
       if (R.name !== p.name && p.name) updateNameTag(R, p.name);
-      if (p.gender && p.gender !== R.gender){
-        const pos = R.parts.group.position.clone();
-        scene.remove(R.parts.group);
-        const isFemale = (p.gender==='female');
-        const bodyCol = isFemale ? 0xffd7d0 : 0xadd8e6;
-        const accent  = isFemale ? 0xff3a66 : 0xffffff;
-        const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
-        parts.group.position.copy(pos);
-        parts.group.add(R.tag);
-        scene.add(parts.group);
-        R.parts = parts; R.gender = p.gender;
-      }
+      // Cinsiyete göre model değiştirme KALDIRILDI
     });
   });
 
@@ -966,7 +1027,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   function tick(now){
     for (const c of colliders) syncDebugRing(c);
-
+    // FPS hesabı
     const _frameDt = now - _fpsLast; _fpsLast = now;
     const _instFps = 1000 / Math.max(1, _frameDt);
     _fpsEWMA = _fpsEWMA ? (_fpsEWMA*0.9 + _instFps*0.1) : _instFps;
@@ -975,6 +1036,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
     if (COLLISION_ENABLED) pushOutFromColliders(local.parts.group.position);
 
+    // Movement
     const kForward   = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0) || (keys.has("ArrowUp")?1:0) - (keys.has("ArrowDown")?1:0);
     const kStrafeKB  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0) || (keys.has("ArrowRight")?1:0) - (keys.has("ArrowLeft")?1:0);
     let forward = kForward + (joyVec.y||0);
@@ -984,9 +1046,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
     const mag = Math.hypot(strafe,forward) || 1;
     const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (mag>1 ? 1/mag : 1);
-
-    // Hareket başlarsa dansı kes (toggle kapansın)
-    if ((forward || strafe) && stickyEmote) stickyEmote = null;
 
     if (forward || strafe) {
       const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
@@ -1010,15 +1069,19 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
     local.parts.group.rotation.y = local.yaw;
 
+    // Camera follow
     const camX = local.parts.group.position.x - Math.sin(local.yaw) * camDist;
     const camZ = local.parts.group.position.z - Math.cos(local.yaw) * camDist;
     camera.position.lerp(new THREE.Vector3(camX, 2.0, camZ), 0.15);
     camera.lookAt(local.parts.group.position.x, local.parts.group.position.y + 0.8, local.parts.group.position.z);
 
+    // Planets
     for (const p of planetMeshes) p.mesh.rotation.y -= 0.0012;
 
+    // Dinamik paketler
     updateLazyPacks(local.parts.group.position.x, local.parts.group.position.z);
 
+    // Net sync
     netAcc += dt;
     if (netAcc > 0.08 && local.id) {
       netAcc = 0;
@@ -1026,6 +1089,23 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
 
     checkHotspots();
+
+      // Animasyon güncelle
+  if (mixer) mixer.update(dt);
+
+  // Yürü/koş durumuna göre aksiyon
+  if (usingGLBAvatar) {
+    const moving = Math.abs(forward) + Math.abs(strafe) > 0.01;
+    const wantRun = moving && keys.has("ShiftLeft") && !!actions.run;
+    const nextName =
+      moving ? (wantRun ? 'run' : (actions.walk ? 'walk' : currentActionName))
+            : (actions.idle ? 'idle' : currentActionName);
+
+    if (nextName && nextName !== currentActionName) {
+      playAction(nextName, 0.12, wantRun ? 1.0 : 0.85);
+    }
+  }
+
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
