@@ -143,15 +143,15 @@
     });
   </script>
 
-  <!-- === Güvenli NFT akışı (SEÇİM ZORUNLU) — client.js'ten ÖNCE === -->
+    <!-- === Güvenli NFT akışı (BACKEND üstünden) — client.js'ten ÖNCE === -->
+    <!-- === Güvenli NFT akışı (SEÇİM ZORUNLU & ESC sonrası tekrar odak) — client.js'ten ÖNCE === -->
   <script>
-    // Konfig
-    const REQUIRE_NFT_IF_AVAILABLE   = true;  // Cüzdanda NFT varsa önce seçim şart
-    const AUTO_START_AFTER_NFT_SELECT = true; // NFT seçilince oyunu otomatik başlat
+    // Ayarlar
+    const REQUIRE_NFT_IF_AVAILABLE    = true;   // Cüzdanda NFT varsa seçim zorunlu
+    const AUTO_START_AFTER_NFT_SELECT = true;   // NFT seçilince otomatik başlat
 
-    // Backendi farklı bir domainden çağıracaksan doldur:
-    // const BACKEND_BASE = "https://mmotest-5uut.onrender.com";
-    const BACKEND_BASE = ""; // aynı origin
+    // Backend base (aynı origin ise boş bırak)
+    const BACKEND_BASE = "";
 
     const allowedOrigins = [
       'https://cryptoyogi.webflow.io',
@@ -160,35 +160,36 @@
       'https://yagizcanmutlu.github.io'
     ];
 
-    // State
+    // Durum
     let walletFromHost = null;
+    let walletKnown    = false;   // <-- cüzdan gelmeden başlatma yok
     let allWalletNFTs  = [];
     let selectedNFT    = null;
-    let hasStarted     = false;
+    let hasStarted     = false;   // oyun init edildi mi
+    let lastPayload    = null;    // tekrar odak için saklarız
 
-    // UI refs
-    const nftModal     = document.getElementById('nftModal');
-    const nftGrid      = document.getElementById('nftGrid');
-    const walletLbl    = document.getElementById('walletLabel');
-    const useNftBtn    = document.getElementById('useNft');
-    const closeNftBtn  = document.getElementById('closeNft');
-    const openNftBtn   = document.getElementById('openNftSelect');
+    // UI
+    const nftModal      = document.getElementById('nftModal');
+    const nftGrid       = document.getElementById('nftGrid');
+    const walletLbl     = document.getElementById('walletLabel');
+    const useNftBtn     = document.getElementById('useNft');
+    const closeNftBtn   = document.getElementById('closeNft');
+    const openNftBtn    = document.getElementById('openNftSelect');
 
-    const nameInput    = document.getElementById('nameInput');
-    const hudGender    = document.getElementById('hudGender');
-    const genderRadios = Array.from(document.querySelectorAll('input[name="gender"]'));
+    const nameInput     = document.getElementById('nameInput');
+    const hudGender     = document.getElementById('hudGender');
+    const genderRadios  = Array.from(document.querySelectorAll('input[name="gender"]'));
 
-    const chosenMini   = document.getElementById('chosenNftMini');
-    const chosenImg    = document.getElementById('chosenNftImg');
-    const chosenName   = document.getElementById('chosenNftName');
-    const chosenStats  = document.getElementById('chosenNftStats');
+    const chosenMini    = document.getElementById('chosenNftMini');
+    const chosenImg     = document.getElementById('chosenNftImg');
+    const chosenName    = document.getElementById('chosenNftName');
+    const chosenStats   = document.getElementById('chosenNftStats');
 
-    const playBtn      = document.getElementById('playBtn');   // giriş butonu
-    const cta          = document.getElementById('cta');       // üst kart
+    const playBtn       = document.getElementById('playBtn');
+    const cta           = document.getElementById('cta');
 
     // Yardımcılar
-    const mask = (addr)=> addr ? (addr.slice(0,4)+'…'+addr.slice(-4)) : '';
-
+    const mask = (a)=> a ? (a.slice(0,4)+'…'+a.slice(-4)) : '';
     function syncHudGender(){
       const g = (genderRadios.find(r=>r.checked)?.value)||'female';
       hudGender.textContent = g==='male' ? '♂ Erkek' : '♀ Kadın';
@@ -217,7 +218,6 @@
             level: f.level || 1,
             crit: f.crit_chance || 0.2,
             gender: (f.gender || '').toLowerCase(),
-            // Eğer Airtable’da GLB yolu alanın varsa burada eşle:
             modelUrl: f.model_url || f.glb || f.url || null
           };
         });
@@ -226,7 +226,7 @@
     }
 
     function openModal(){
-      // pointer-lock varsa bırak ki tıklanabilsin
+      // Pointer lock’ı bırak ki tıklanabilsin
       try { document.exitPointerLock?.(); } catch {}
       nftModal.style.display='flex';
       nftModal.setAttribute('aria-hidden','false');
@@ -262,9 +262,9 @@
       if(!selectedNFT) return;
       nameInput.value = selectedNFT.name;
       if(selectedNFT.gender==='male' || selectedNFT.gender==='m'){
-        genderRadios.find(r=>r.value==='male').checked = true;
+        const r = genderRadios.find(r=>r.value==='male'); if (r) r.checked = true;
       } else if(selectedNFT.gender==='female' || selectedNFT.gender==='f'){
-        genderRadios.find(r=>r.value==='female').checked = true;
+        const r = genderRadios.find(r=>r.value==='female'); if (r) r.checked = true;
       }
       syncHudGender();
       chosenMini.style.display = 'flex';
@@ -274,7 +274,6 @@
     }
 
     function startWithPayload(){
-      if (hasStarted) return;
       const payload = {
         wallet: walletFromHost,
         nft: selectedNFT || null,
@@ -283,22 +282,33 @@
       };
       window.agoraInjectedPayload = payload;
       window.dispatchEvent(new CustomEvent('agoraInit', { detail: payload }));
-      hasStarted = true;
+      lastPayload = payload;
+      hasStarted  = true;
       if (cta) cta.style.display = "none";
     }
 
-    // —— GİRİŞ Butonu: NFT varsa ve seçilmediyse önce modalı aç, oyunu başlatma
+    // “Giriş” butonu davranışı
     playBtn.addEventListener('click', () => {
+      // Oyun zaten çalışıyorsa: sadece pointer lock/odak iste
+      if (hasStarted) {
+        window.dispatchEvent(new CustomEvent('agoraFocus'));
+        return;
+      }
+      // Cüzdan gelmeden başlatma
+      if (!walletKnown) {
+        alert('Cüzdan okunuyor, lütfen 1-2 saniye bekle…');
+        return;
+      }
       const haveNFTs = (allWalletNFTs.length > 0);
       if (REQUIRE_NFT_IF_AVAILABLE && haveNFTs && !selectedNFT){
-        // “Giriş” yerine önce seçim
+        // Seçim zorunlu → modal
         walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost || '');
         renderNFTGrid(allWalletNFTs);
         useNftBtn.disabled = true;
         openModal();
         return;
       }
-      // NFT yoksa ya da seçildiyse normal başlat
+      // NFT yoksa ya da seçilmişse başlat
       startWithPayload();
     });
 
@@ -317,24 +327,24 @@
       if (AUTO_START_AFTER_NFT_SELECT && !hasStarted) startWithPayload();
     });
 
-    // Host → cüzdan (Webflow embed)
+    // Host → cüzdan (Webflow embed postMessage)
     window.addEventListener('message', async (event) => {
       if(!allowedOrigins.includes(event.origin)) return;
       const msg = event.data || {};
       if(msg.type === 'walletAddress'){
         walletFromHost = (msg.address||'').trim().toLowerCase();
+        walletKnown    = true;
         walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
 
-        // NFT’leri çek → varsa modalı otomatik aç ve “Giriş”i beklet
         allWalletNFTs = await fetchWalletNFTs(walletFromHost);
 
         if (REQUIRE_NFT_IF_AVAILABLE && allWalletNFTs.length > 0) {
-          // Oyunu kilitle: Giriş'e basılsa bile önce seçim yaptıracağız
+          // Giriş öncesi seçim
           useNftBtn.disabled = true;
           renderNFTGrid(allWalletNFTs);
           openModal();
 
-          // Tek NFT varsa otomatik seç + direkt başlat (isteğe bağlı)
+          // Tek NFT ise otomatik seç & başlat (opsiyonel)
           if (allWalletNFTs.length === 1) {
             selectedNFT = allWalletNFTs[0];
             applyChosenNFT();
@@ -348,12 +358,13 @@
       }
     });
 
-    // Fallback: URL ?wallet= adresinden al (yerel test)
+    // URL ?wallet=fallback (yerel test)
     (async () => {
       const u = new URL(location.href);
       const w = u.searchParams.get('wallet');
       if (w && !walletFromHost) {
         walletFromHost = w.trim().toLowerCase();
+        walletKnown    = true;
         walletLbl.textContent = 'Cüzdan: ' + mask(walletFromHost);
         allWalletNFTs = await fetchWalletNFTs(walletFromHost);
         if (REQUIRE_NFT_IF_AVAILABLE && allWalletNFTs.length > 0) {
