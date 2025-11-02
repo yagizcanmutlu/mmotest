@@ -3,183 +3,6 @@ import * as THREE from '/vendor/three/build/three.module.js';
 import { GLTFLoader }  from '/vendor/three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
-// three importlarının hemen altına koy
-import { KTX2Loader } from '/vendor/three/examples/jsm/loaders/KTX2Loader.js';
-
-let avatarRoot = null;
-local.avatarMixer = null;
-local.avatarActions = {};
-local.currentAction = null;
-
-// materyalleri “güvenli” standard’a çevir
-function sanitizeMaterials(root) {
-  root.traverse((o) => {
-    if (!o.isMesh) return;
-    const m = o.material;
-    const safe = new THREE.MeshStandardMaterial({
-      color: (m?.color ? m.color.clone() : new THREE.Color(0xffffff)),
-      map: m?.map || null,
-      normalMap: m?.normalMap || null,
-      roughnessMap: m?.roughnessMap || null,
-      metalnessMap: m?.metalnessMap || null,
-      roughness: (typeof m?.roughness === 'number' ? m.roughness : 0.9),
-      metalness: (typeof m?.metalness === 'number' ? m.metalness : 0.0),
-      skinning: true
-    });
-    o.material = safe;
-    o.castShadow = true;
-    o.receiveShadow = true;
-  });
-}
-
-// avatar’ı sahneye bas + animasyonları hazırla
-function attachAvatarToLocal(root, clips, opts={}) {
-  // Astronotu gizle
-  if (local.parts?.group) local.parts.group.visible = false;
-
-  // Önceki avatarı sil
-  if (avatarRoot) {
-    scene.remove(avatarRoot);
-    avatarRoot.traverse(o=>{
-      if (o.isMesh) {
-        o.geometry?.dispose?.();
-        if (Array.isArray(o.material)) o.material.forEach(mm=>mm.dispose?.());
-        else o.material?.dispose?.();
-      }
-    });
-  }
-
-  // Pivot ve ölçek
-  const bb = new THREE.Box3().setFromObject(root);
-  const c  = bb.getCenter(new THREE.Vector3());
-  root.position.sub(c.set(c.x, bb.min.y, c.z)); // ayak zemine
-  const size = bb.getSize(new THREE.Vector3());
-  const targetHeight = opts.targetHeight ?? 1.6; // metre
-  const s = targetHeight / Math.max(size.y, 1e-6);
-  root.scale.setScalar(s);
-
-  // Yerel oyuncu pozisyonuna koy
-  root.position.add(local.parts.group.position);
-  avatarRoot = new THREE.Group();
-  avatarRoot.add(root);
-  scene.add(avatarRoot);
-
-  // Animator
-  local.avatarMixer = new THREE.AnimationMixer(root);
-  local.avatarActions = {};
-  (clips||[]).forEach((clip)=>{
-    // klip isimlerini normalize et
-    const key = clip.name.toLowerCase();
-    local.avatarActions[key] = local.avatarMixer.clipAction(clip);
-  });
-
-  // varsayılan durum: yürüyüş yerine hafif idle yoksa clapping’i loop’a al
-  let idle = local.avatarActions['idle'] || local.avatarActions['hip_hop_dance_3'] || local.avatarActions['clapping_run'];
-  if (idle) {
-    idle.reset().setLoop(THREE.LoopRepeat).fadeIn(0.2).play();
-    local.currentAction = idle;
-  }
-
-  console.log('[AVATAR] attached. clips:', Object.keys(local.avatarActions));
-}
-
-// GLB yükle
-async function loadCustomAvatar(incoming) {
-  const url = (typeof incoming === 'string')
-    ? incoming
-    : (incoming?.glbUrl || incoming?.modelUrl || incoming?.glb || incoming?.url);
-
-  if (!url) { console.warn('[Avatar] GLB URL yok:', incoming); return false; }
-
-  return new Promise((resolve) => {
-    gltfLoader.load(url, (gltf) => {
-      const root = gltf.scene || gltf.scenes?.[0];
-      if (!root) { console.warn('[Avatar] GLTF scene yok'); resolve(false); return; }
-
-      // Eski gövdeyi sahneden kaldır
-      const prev = local.parts?.group;
-      const nameTag = local.tag;
-      if (prev) scene.remove(prev);
-
-      // Materyalleri WebGL güvenli hale getir
-      function toStandard(m) {
-        if (!m) return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
-        const std = new THREE.MeshStandardMaterial({
-          color: (m.color && m.color.getHex) ? m.color.getHex() : 0xffffff,
-          map: m.map || null,
-          normalMap: m.normalMap || null,
-          roughness: ('roughness' in m) ? m.roughness : 0.9,
-          metalness: ('metalness' in m) ? m.metalness : 0.0,
-          transparent: m.transparent === true,
-          alphaTest: Math.min(0.5, m.alphaTest || 0.0),
-          side: THREE.FrontSide,
-          depthWrite: true,
-          depthTest: true,
-        });
-        if (std.map) std.map.colorSpace = THREE.SRGBColorSpace;
-        return std;
-      }
-
-      root.traverse(o => {
-        if (o.isMesh) {
-          o.castShadow = o.receiveShadow = true;
-          if (Array.isArray(o.material)) o.material = o.material.map(mm => toStandard(mm));
-          else o.material = toStandard(o.material);
-          if (o.material) o.material.skinning = !!o.skeleton;
-        }
-      });
-
-      // Pozisyon/ölçek
-      const scl   = incoming.scale   ?? 0.90;   // model büyükse ↓ küçült
-      const yOff  = incoming.yOffset ?? 0.00;
-      const rotY  = ('rotateY' in incoming) ? incoming.rotateY : 0;
-
-      root.scale.setScalar(scl);
-      root.position.copy(local.parts.group.position);
-      root.position.y += yOff;
-      root.rotation.y = rotY;
-
-      // İsim etiketi
-      if (nameTag) { nameTag.position.y = 1.8; root.add(nameTag); }
-
-      scene.add(root);
-      local.parts = { group: root };
-
-      // Animasyonlar
-      if (gltf.animations?.length) {
-        if (!local.mixer) local.mixer = new THREE.AnimationMixer(root);
-        else { local.mixer.stopAllAction(); local.mixer.uncacheRoot(local.mixer.getRoot()); local.mixer = new THREE.AnimationMixer(root); }
-
-        local.animClips = {};
-        for (const clip of gltf.animations) {
-          const k = clip.name.toLowerCase();
-          local.animClips[k] = clip;
-          if (/idle/i.test(k))  local.animClips.idle  = clip;
-          if (/walk/i.test(k))  local.animClips.walk  = clip;
-          if (/run(?!.*back)/i.test(k)) local.animClips.run = clip;
-          if (/clap/i.test(k))  local.animClips.clap  = clip;
-          if (/hip|dance/i.test(k)) local.animClips.dance = clip;
-        }
-
-        // varsayılan animasyon (varsa)
-        if (local.animClips.idle || local.animClips.walk) {
-          const base = local.animClips.idle || local.animClips.walk;
-          const action = local.mixer.clipAction(base);
-          action.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.2).play();
-          local.currentAction = action;
-        }
-      }
-
-      console.log('[Avatar] yüklendi →', url);
-      resolve(true);
-    }, undefined, (err) => {
-      console.error('[Avatar] GLB yükleme hatası:', err);
-      resolve(false);
-    });
-  });
-}
-
-
 /* global io */
 (() => {
   // ⛔ client.js birden fazla kez çalışıyorsa hemen çık
@@ -217,114 +40,27 @@ async function loadCustomAvatar(incoming) {
     }
   }
 
-  async function startGameFromPayload({ playerName, gender = 'female', wallet = null, nft = null } = {}) {
+  function startGameFromPayload({ playerName, gender='female', wallet=null, nft=null } = {}) {
     const name = (playerName || '').trim() || 'Player';
     local.gender = gender;
     if (name) updateNameTag(local, name);
+
     setHudGender(gender);
 
-    // NFT seçimini normalize et (string ya da obje)
-    const selected = (() => {
-      const raw = nft ?? window.__AGORA_SELECTED_NFT__ ?? null;
-      if (!raw) return null;
-      if (typeof raw === 'string') return { glbUrl: raw };
-      const glbUrl = raw.glbUrl || raw.modelUrl || raw.glb || raw.url || null;
-      if (!glbUrl) return null;
-      return { ...raw, glbUrl };
-    })();
+    socket.emit("profile:update", { name, gender, wallet, nft });
+    socket.emit("join",           { name, gender, wallet, nft });
 
-    console.log('[Agora] startGameFromPayload ->', { name, gender, selected });
+    if (cta) cta.style.display = "none";
+    try { renderer.domElement.requestPointerLock(); } catch(e){}
 
-    // Avatarı arka planda yükle (UI’yi bloklamasın)
-    if (selected) {
-      loadCustomAvatar(selected).catch(e => console.error('[Agora] Avatar yükleme hatası:', e));
-    }
-
-    socket.emit('profile:update', { name, gender, wallet, nft: selected || nft || null });
-    socket.emit('join',           { name, gender, wallet, nft: selected || nft || null });
-
-    if (cta) cta.style.display = 'none';
-    try { renderer.domElement.requestPointerLock(); } catch (e) {}
-
-    // 0x0 framebuffer uyarısını kesmek için “resize kick”
-    setTimeout(() => {
-      renderer.setSize(root.clientWidth, root.clientHeight);
-      camera.aspect = root.clientWidth / root.clientHeight;
-      camera.updateProjectionMatrix();
-    }, 30);
-
-    window.__AGORA_SELECTED_NFT__ = selected || nft || null;
+    window.__AGORA_SELECTED_NFT__ = nft || null;
   }
 
-
-
-  // Seçim modalinden gelen olay (NFT Seç butonunda tetikliyorsun)
   window.addEventListener('agoraInit', (e) => {
     const payload = e?.detail || {};
-    window.agoraInjectedPayload = payload; // debug için de tut
-    console.log('[AGORA] init payload:', payload);
-    startGameFromPayload(payload); // doğrudan başlat
+    window.agoraInjectedPayload = payload;
+    startGameFromPayload(payload);
   });
-
-
-  // --- CUSTOM AVATAR (NFT) ---
-  async function loadCustomAvatar(url, targetHeight = 1.65) {
-    if (!url) return false;
-    return new Promise((resolve) => {
-      gltfLoader.load(url, (gltf) => {
-        const root = new THREE.Group();
-        const sceneNode = gltf.scene || gltf.scenes?.[0];
-        if (!sceneNode) return resolve(false);
-
-        sceneNode.traverse(o => { if (o.isMesh){ o.castShadow = o.receiveShadow = true; }});
-        root.add(sceneNode);
-
-        // Yüksekliği 1.65m'e normalize et
-        const bb = new THREE.Box3().setFromObject(root);
-        const h  = Math.max(0.0001, bb.max.y - bb.min.y);
-        const s  = targetHeight / h;
-        root.scale.setScalar(s);
-        const bb2 = new THREE.Box3().setFromObject(root);
-        root.position.y += -bb2.min.y + 0.02;
-
-        // Eski avatarı sahneden çıkar
-        if (local?.parts?.group) scene.remove(local.parts.group);
-
-        // NameTag'i koru
-        const tag = local.tag || makeNameSprite(local.name || 'Player');
-        root.add(tag);
-
-        // Local parçayı GLB ile değiştir
-        local.parts = { group: root };          // minimal API
-        scene.add(root);
-
-        // GLB içi animasyonları hazırlanır (varsa)
-        if (gltf.animations && gltf.animations.length) {
-          local.avatarMixer = new THREE.AnimationMixer(root);
-          local.avatarActions = {};
-          gltf.animations.forEach(clip => {
-            local.avatarActions[clip.name] = local.avatarMixer.clipAction(clip);
-          });
-        }
-        resolve(true);
-      }, undefined, () => resolve(false));
-    });
-  }
-
-  // Basit oynatıcı (ad eşleşmezse içinde "Dance" geçen ilk klibi bulur)
-  function playAvatarAction(nameLike, loop=true) {
-    if (!local.avatarActions) return false;
-    let key = Object.keys(local.avatarActions).find(k => k.toLowerCase() === nameLike.toLowerCase());
-    if (!key) key = Object.keys(local.avatarActions).find(k => k.toLowerCase().includes(nameLike.toLowerCase()));
-    if (!key) return false;
-    // Hepsini kapat
-    Object.values(local.avatarActions).forEach(a => { a.stop(); a.reset(); });
-    const act = local.avatarActions[key];
-    act.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
-    act.fadeIn(0.15).play();
-    return true;
-  }
-
 
   // === Registry & Collisions ===
   const npcRegistry = new Map();             // key -> THREE.Group (root)
@@ -940,9 +676,9 @@ async function loadCustomAvatar(incoming) {
       keys.add(e.code);
 
       // Kameraya göre hızlı yönler
-      // if (e.code === "KeyS") faceCamera(0);                 // kameraya ön
-      // if (e.code === "KeyA") faceCamera(Math.PI / 2);       // sola yan
-      // if (e.code === "KeyD") faceCamera(-Math.PI / 2);      // sağa yan
+      if (e.code === "KeyS") faceCamera(0);                 // kameraya ön
+      if (e.code === "KeyA") faceCamera(Math.PI / 2);       // sola yan
+      if (e.code === "KeyD") faceCamera(-Math.PI / 2);      // sağa yan
 
       // Dans toggle (Digit3)
       if (e.code === "Digit3") {
@@ -1228,111 +964,72 @@ async function loadCustomAvatar(incoming) {
     });
   }
 
-  function lerpAngle(a, b, t) {
-    let diff = (b - a + Math.PI) % (Math.PI * 2);
-    if (diff < 0) diff += Math.PI * 2;
-    diff -= Math.PI;
-    return a + diff * t;
-  }
-
   function tick(now){
     for (const c of colliders) syncDebugRing(c);
 
-    // FPS hesap
     const _frameDt = now - _fpsLast; _fpsLast = now;
     const _instFps = 1000 / Math.max(1, _frameDt);
     _fpsEWMA = _fpsEWMA ? (_fpsEWMA*0.9 + _instFps*0.1) : _instFps;
 
     const dt = Math.min(0.05, (now-last)/1000); last = now;
 
-    // Spawn/ilk frame iç içe kalma ihtimaline karşı hafif ittirme
     if (COLLISION_ENABLED) pushOutFromColliders(local.parts.group.position);
 
-    // ======== A/S/D yön ver & o yöne yürü (kamera sabit) ========
-    const pos = local.parts.group.position;
-    const px = pos.x, pz = pos.z;
+    const kForward   = (keys.has("KeyW")?1:0) - (keys.has("KeyS")?1:0) || (keys.has("ArrowUp")?1:0) - (keys.has("ArrowDown")?1:0);
+    const kStrafeKB  = (keys.has("KeyD")?1:0) - (keys.has("KeyA")?1:0) || (keys.has("ArrowRight")?1:0) - (keys.has("ArrowLeft")?1:0);
+    let forward = kForward + (joyVec.y||0);
+    let strafe  = kStrafeKB + (joyVec.x||0);
+    forward = Math.max(-1, Math.min(1, forward));
+    strafe  = Math.max(-1, Math.min(1, strafe));
 
-    // Kameraya doğru yaw (oyuncudan kameraya bakan yön)
-    const yawToCam = Math.atan2(camera.position.x - px, camera.position.z - pz);
+    const mag = Math.hypot(strafe,forward) || 1;
+    const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (mag>1 ? 1/mag : 1);
 
-    const wDown = keys.has("KeyW") || keys.has("ArrowUp");
-    const aDown = keys.has("KeyA") || keys.has("ArrowLeft");
-    const sDown = keys.has("KeyS") || keys.has("ArrowDown");
-    const dDown = keys.has("KeyD") || keys.has("ArrowRight");
-
-    // Hangi yöne bakmalı?
-    let desiredYaw = local.yaw;
-    if (!wDown) {
-      if (sDown)      desiredYaw = yawToCam;               // kameraya doğru
-      else if (aDown) desiredYaw = yawToCam + Math.PI/2;   // sola
-      else if (dDown) desiredYaw = yawToCam - Math.PI/2;   // sağa
-    }
-    // yumuşak dönüş
-    local.yaw = lerpAngle(local.yaw, desiredYaw, 0.25);
-
-    // İleri/strafe niyeti
-    let forward = 0, strafe = 0;
-    if (wDown) {
-      forward = 1;
-    } else if (aDown || sDown || dDown) {
-      // W yoksa A/S/D tek başına basılıyken de yürü
-      forward = 1;
-      strafe  = 0;
-    } else {
-      // joystick katkısı (mobil)
-      forward = joyVec.y || 0;
-      strafe  = joyVec.x || 0;
-    }
-
-    // hız ve hareket
-    const mag = Math.hypot(strafe, forward) || 1;
-    const spd = (keys.has("ShiftLeft") ? speedRun : speedWalk) * (mag > 1 ? 1/mag : 1);
+    // Hareket başlarsa dansı kes (toggle kapansın)
+    if ((forward || strafe) && stickyEmote) stickyEmote = null;
 
     if (forward || strafe) {
       const sin = Math.sin(local.yaw), cos = Math.cos(local.yaw);
       const dx = forward * sin - strafe * cos;
       const dz = forward * cos + strafe * sin;
 
+      const px = local.parts.group.position.x;
+      const pz = local.parts.group.position.z;
+
       const nx = px + dx * spd * dt;
       const nz = pz + dz * spd * dt;
 
       if (COLLISION_ENABLED) {
         const solved = resolveCollision(px, pz, nx, nz);
-        pos.x = solved.x; pos.z = solved.z;
+        local.parts.group.position.x = solved.x;
+        local.parts.group.position.z = solved.z;
       } else {
-        pos.set(nx, 0, nz);
+        local.parts.group.position.set(nx, 0, nz);
       }
     }
 
-    // Oyuncu modeli kendi yaw'una baksın
     local.parts.group.rotation.y = local.yaw;
 
-    // Kamera takip
-    const camX = pos.x - Math.sin(local.yaw) * camDist;
-    const camZ = pos.z - Math.cos(local.yaw) * camDist;
+    const camX = local.parts.group.position.x - Math.sin(local.yaw) * camDist;
+    const camZ = local.parts.group.position.z - Math.cos(local.yaw) * camDist;
     camera.position.lerp(new THREE.Vector3(camX, 2.0, camZ), 0.15);
-    camera.lookAt(pos.x, pos.y + 0.8, pos.z);
+    camera.lookAt(local.parts.group.position.x, local.parts.group.position.y + 0.8, local.parts.group.position.z);
 
-    // Gezegen/props anim
     for (const p of planetMeshes) p.mesh.rotation.y -= 0.0012;
 
-    // Dinamik paketler
-    updateLazyPacks(pos.x, pos.z);
+    updateLazyPacks(local.parts.group.position.x, local.parts.group.position.z);
 
-    // GLB animasyonları (varsa)
-    if (local.avatarMixer) local.avatarMixer.update(dt);
-
-    // Net senk
     netAcc += dt;
     if (netAcc > 0.08 && local.id) {
       netAcc = 0;
-      socket.emit("state", { x: pos.x, y: 0, z: pos.z, ry: local.yaw });
+      socket.emit("state", { x:local.parts.group.position.x, y:0, z:local.parts.group.position.z, ry: local.yaw });
     }
 
     checkHotspots();
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
+  requestAnimationFrame(tick);
 
   // Resize
   window.addEventListener("resize", ()=>{
