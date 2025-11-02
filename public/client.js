@@ -3,6 +3,131 @@ import * as THREE from '/vendor/three/build/three.module.js';
 import { GLTFLoader }  from '/vendor/three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
+// three importlarının hemen altına koy
+import { KTX2Loader } from '/vendor/three/examples/jsm/loaders/KTX2Loader.js';
+
+let avatarRoot = null;
+local.avatarMixer = null;
+local.avatarActions = {};
+local.currentAction = null;
+
+// materyalleri “güvenli” standard’a çevir
+function sanitizeMaterials(root) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material;
+    const safe = new THREE.MeshStandardMaterial({
+      color: (m?.color ? m.color.clone() : new THREE.Color(0xffffff)),
+      map: m?.map || null,
+      normalMap: m?.normalMap || null,
+      roughnessMap: m?.roughnessMap || null,
+      metalnessMap: m?.metalnessMap || null,
+      roughness: (typeof m?.roughness === 'number' ? m.roughness : 0.9),
+      metalness: (typeof m?.metalness === 'number' ? m.metalness : 0.0),
+      skinning: true
+    });
+    o.material = safe;
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+}
+
+// avatar’ı sahneye bas + animasyonları hazırla
+function attachAvatarToLocal(root, clips, opts={}) {
+  // Astronotu gizle
+  if (local.parts?.group) local.parts.group.visible = false;
+
+  // Önceki avatarı sil
+  if (avatarRoot) {
+    scene.remove(avatarRoot);
+    avatarRoot.traverse(o=>{
+      if (o.isMesh) {
+        o.geometry?.dispose?.();
+        if (Array.isArray(o.material)) o.material.forEach(mm=>mm.dispose?.());
+        else o.material?.dispose?.();
+      }
+    });
+  }
+
+  // Pivot ve ölçek
+  const bb = new THREE.Box3().setFromObject(root);
+  const c  = bb.getCenter(new THREE.Vector3());
+  root.position.sub(c.set(c.x, bb.min.y, c.z)); // ayak zemine
+  const size = bb.getSize(new THREE.Vector3());
+  const targetHeight = opts.targetHeight ?? 1.6; // metre
+  const s = targetHeight / Math.max(size.y, 1e-6);
+  root.scale.setScalar(s);
+
+  // Yerel oyuncu pozisyonuna koy
+  root.position.add(local.parts.group.position);
+  avatarRoot = new THREE.Group();
+  avatarRoot.add(root);
+  scene.add(avatarRoot);
+
+  // Animator
+  local.avatarMixer = new THREE.AnimationMixer(root);
+  local.avatarActions = {};
+  (clips||[]).forEach((clip)=>{
+    // klip isimlerini normalize et
+    const key = clip.name.toLowerCase();
+    local.avatarActions[key] = local.avatarMixer.clipAction(clip);
+  });
+
+  // varsayılan durum: yürüyüş yerine hafif idle yoksa clapping’i loop’a al
+  let idle = local.avatarActions['idle'] || local.avatarActions['hip_hop_dance_3'] || local.avatarActions['clapping_run'];
+  if (idle) {
+    idle.reset().setLoop(THREE.LoopRepeat).fadeIn(0.2).play();
+    local.currentAction = idle;
+  }
+
+  console.log('[AVATAR] attached. clips:', Object.keys(local.avatarActions));
+}
+
+// GLB yükle
+function loadCustomAvatar(nft) {
+  return new Promise((resolve, reject) => {
+    if (!nft || !nft.glbUrl) {
+      console.warn('[AVATAR] nft.glbUrl yok, astronotla devam.');
+      return resolve(false);
+    }
+
+    console.log('[AVATAR] loading GLB:', nft.glbUrl);
+
+    const loader = new GLTFLoader();
+    // KTX2 desteği (olmasa da sorun değil)
+    try {
+      const ktx2 = new KTX2Loader().setTranscoderPath('/vendor/three/examples/jsm/libs/basis/').detectSupport(renderer);
+      loader.setKTX2Loader(ktx2);
+    } catch (_) {}
+
+    loader.load(
+      nft.glbUrl,
+      (gltf) => {
+        const root = gltf.scene || gltf.scenes?.[0];
+        if (!root) { reject(new Error('GLB sahnesi boş')); return; }
+
+        // güvenli materyal
+        sanitizeMaterials(root);
+
+        // animasyonları içeri al
+        const clips = gltf.animations || [];
+        attachAvatarToLocal(root, clips, { targetHeight: 1.6 });
+
+        resolve(true);
+      },
+      undefined,
+      (err) => {
+        console.error('[AVATAR] GLB yükleme hatası:', err);
+        toast && (toast.textContent = 'Avatar yüklenemedi'); 
+        toast && (toast.style.display='block');
+        setTimeout(()=>toast&&(toast.style.display='none'), 1800);
+        resolve(false); // astronota düş
+      }
+    );
+  });
+}
+
+
 /* global io */
 (() => {
   // ⛔ client.js birden fazla kez çalışıyorsa hemen çık
@@ -40,41 +165,61 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
   }
 
-  function startGameFromPayload({ playerName, gender='female', wallet=null, nft=null } = {}) {
+  async function startGameFromPayload({ playerName, gender = 'female', wallet = null, nft = null } = {}) {
+    // 1) İsim / cinsiyet / HUD
     const name = (playerName || '').trim() || 'Player';
     local.gender = gender;
     if (name) updateNameTag(local, name);
-
     setHudGender(gender);
 
-    socket.emit("profile:update", { name, gender, wallet, nft });
-    socket.emit("join",           { name, gender, wallet, nft });
+    // 2) Seçilmiş NFT’yi normalize et (string veya obje olabilir)
+    const selected = (() => {
+      // öncelik: payload.nft -> global cache -> null
+      const raw = nft ?? window.__AGORA_SELECTED_NFT__ ?? null;
+      if (!raw) return null;
 
-        // NFT model yolu: payload.nft.modelUrl || global değişken
-    const nftUrl =
-      (nft && (nft.modelUrl || nft.glb || nft.url)) ||
-      (typeof window.__AGORA_SELECTED_NFT__ === 'string'
-        ? window.__AGORA_SELECTED_NFT__
-        : (window.__AGORA_SELECTED_NFT__?.modelUrl || window.__AGORA_SELECTED_NFT__?.glb));
+      if (typeof raw === 'string') return { glbUrl: raw }; // düz URL
+      const glbUrl = raw.glbUrl || raw.modelUrl || raw.glb || raw.url || null;
+      if (!glbUrl) return null;
+      return { ...raw, glbUrl };
+    })();
 
-    if (nftUrl) {
-      loadCustomAvatar(nftUrl).then(ok => {
-        if (!ok) console.warn('[Agora] NFT/GLB yüklenemedi:', nftUrl);
-      });
+    // 3) Avatarı mümkünse yükle (başarısız olursa astronot görünür)
+    if (selected) {
+      try {
+        const ok = await loadCustomAvatar(selected); // <- loadCustomAvatar(nftObj) bekler
+        if (!ok) console.warn('[Agora] NFT/GLB yüklenemedi:', selected.glbUrl);
+      } catch (e) {
+        console.error('[Agora] Avatar yükleme hatası:', e);
+      }
     }
 
+    // 4) Sunucuya profil + join
+    socket.emit('profile:update', { name, gender, wallet, nft: selected || nft || null });
+    socket.emit('join',           { name, gender, wallet, nft: selected || nft || null });
 
-    if (cta) cta.style.display = "none";
-    try { renderer.domElement.requestPointerLock(); } catch(e){}
+    // 5) UI geçişi + pointer lock + resize kick (0x0 framebuffer uyarısını önler)
+    if (cta) cta.style.display = 'none';
+    try { renderer.domElement.requestPointerLock(); } catch (e) {}
+    setTimeout(() => {
+      renderer.setSize(root.clientWidth, root.clientHeight);
+      camera.aspect = root.clientWidth / root.clientHeight;
+      camera.updateProjectionMatrix();
+    }, 30);
 
-    window.__AGORA_SELECTED_NFT__ = nft || null;
+    // 6) Cache
+    window.__AGORA_SELECTED_NFT__ = selected || nft || null;
   }
 
+
+  // Seçim modalinden gelen olay (NFT Seç butonunda tetikliyorsun)
   window.addEventListener('agoraInit', (e) => {
     const payload = e?.detail || {};
-    window.agoraInjectedPayload = payload;
-    startGameFromPayload(payload);
+    window.agoraInjectedPayload = payload; // debug için de tut
+    console.log('[AGORA] init payload:', payload);
+    startGameFromPayload(payload); // doğrudan başlat
   });
+
 
   // --- CUSTOM AVATAR (NFT) ---
   async function loadCustomAvatar(url, targetHeight = 1.65) {
@@ -1036,7 +1181,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       if (d <= info.r + 0.5) { local.visited[name]=true; socket.emit("hotspot:entered", { name }); }
     });
   }
-  
+
   function lerpAngle(a, b, t) {
     let diff = (b - a + Math.PI) % (Math.PI * 2);
     if (diff < 0) diff += Math.PI * 2;
