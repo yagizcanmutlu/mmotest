@@ -27,26 +27,31 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const lookpad  = document.getElementById("lookpad");
 
   // === CİNSİYET KALDIRILDI — yalnızca isim, wallet ve NFT ile giriş ===
-  function startGameFromPayload({ playerName, wallet=null, nft=null } = {}) {
-    if (payload?.nft?.modelUrl) {
-    swapLocalAvatarFromGLB(payload.nft.modelUrl);
-  }
-    
-    const name = (playerName || '').trim() || 'Player';
+  function startGameFromPayload(pl = {}) {
+    const name   = (pl.playerName || '').trim() || 'Player';
+    const gender = pl.gender || 'unknown';
+    const wallet = pl.wallet || null;
+    const nft    = pl.nft || null;
+
+    // 1) yerel state
+    local.gender = gender;
     if (name) updateNameTag(local, name);
 
-    // Server’a profil ve join bilgisi gönder
-    // (Server tanımı destekliyorsa wallet/nft alanlarını kullanır; bilmiyorsa yok sayar.)
-    socket.emit("profile:update", { name, wallet, nft });
-    socket.emit("join",           { name, wallet, nft });
+    // 2) HUD
+    setHudGender(gender);
 
-    // UI geçişleri
+    // 3) server sync
+    socket.emit("profile:update", { name, gender, wallet, nft });
+    socket.emit("join",           { name, gender, wallet, nft });
+
+    // 4) UI
     if (cta) cta.style.display = "none";
     try { renderer.domElement.requestPointerLock(); } catch(e){}
 
-    // Seçilen NFT’yi yerelde tut
+    // 5) seçilen NFT’yi cache'le
     window.__AGORA_SELECTED_NFT__ = nft || null;
   }
+
 
   // 1) index.html'den gelen event ile başlat
   window.addEventListener('agoraInit', (e) => {
@@ -73,6 +78,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     };
 
     window.agoraInjectedPayload = pl;
+    console.log('[fallback] payload:', pl);
     startGameFromPayload(pl);
   });
 

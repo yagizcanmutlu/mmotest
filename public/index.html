@@ -246,7 +246,8 @@
       const payload = {
         wallet: walletFromHost,
         nft: selectedNFT || null,
-        playerName: nameInput.value.trim() || (selectedNFT ? selectedNFT.name : 'Player')
+        playerName: nameInput.value.trim() || (selectedNFT ? selectedNFT.name : 'Player'),
+        gender: (document.querySelector('input[name="gender"]:checked')?.value) || 'unknown'
       };
       window.agoraInjectedPayload = payload;
       window.dispatchEvent(new CustomEvent('agoraInit', { detail: payload }));
