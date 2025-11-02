@@ -28,6 +28,10 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   // === CİNSİYET KALDIRILDI — yalnızca isim, wallet ve NFT ile giriş ===
   function startGameFromPayload({ playerName, wallet=null, nft=null } = {}) {
+    if (payload?.nft?.modelUrl) {
+    swapLocalAvatarFromGLB(payload.nft.modelUrl);
+  }
+    
     const name = (playerName || '').trim() || 'Player';
     if (name) updateNameTag(local, name);
 
@@ -50,6 +54,98 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     window.agoraInjectedPayload = payload; // fallback için cache
     startGameFromPayload(payload);
   });
+
+    // === Alioba avatar (tek GLB, çoklu klip) entegrasyonu ===
+  let avatarGLB = null;         // sahnedeki gerçek GLB kökü
+  let mixer = null;             // AnimationMixer
+  let actions = {};             // { walk, run, dance, clap, idle, ... }
+  let currentAction = null;     // aktif action
+  let currentActionName = null;
+  let usingGLBAvatar = false;
+
+  function normClipName(name='') {
+    const s = name.toLowerCase();
+    if (s.includes('idle') || s.includes('stand')) return 'idle';
+    if (s.includes('back') && s.includes('run'))  return 'runBack';
+    if (s.includes('run'))                        return 'run';
+    if (s.includes('walk'))                       return 'walk';
+    if (s.includes('hip_hop') || s.includes('dance')) return 'dance';
+    if (s.includes('clap'))                       return 'clap';
+    return name.replace(/\s+/g,'_').toLowerCase();
+  }
+
+  function buildActionsFromClips(root, clips=[]) {
+    mixer = new THREE.AnimationMixer(root);
+    actions = {}; currentAction = null; currentActionName = null;
+
+    clips.forEach((clip) => {
+      const name = normClipName(clip.name || '');
+      const act  = mixer.clipAction(clip);
+      act.clampWhenFinished = false;
+      act.loop = THREE.LoopRepeat;
+      actions[name] = act;
+    });
+
+    // Idle yoksa, yürüyüşü düşük hızda "idle" gibi kullan
+    if (!actions.idle && actions.walk) {
+      actions.idle = actions.walk;
+      actions.idle.timeScale = 0.35;
+    }
+  }
+
+  function playAction(name, fade=0.18, speed=1.0) {
+    const next = actions[name];
+    if (!next) return;
+    next.enabled = true;
+    next.timeScale = speed;
+    next.reset();
+
+    if (currentAction && currentAction !== next) {
+      currentAction.crossFadeTo(next, fade, false);
+      next.play();
+    } else if (!currentAction) {
+      next.play();
+    }
+    currentAction = next;
+    currentActionName = name;
+  }
+
+  function installAvatarRoot(root, targetHeight=1.75) {
+    // Ölçek/pivot düzelt
+    root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }});
+    const bb = new THREE.Box3().setFromObject(root);
+    const size = bb.getSize(new THREE.Vector3());
+    const s = targetHeight / Math.max(size.y, 1e-6);
+    root.scale.setScalar(s);
+    const bb2 = new THREE.Box3().setFromObject(root);
+    root.position.y += -bb2.min.y + 0.02;
+
+    // Eski stylized karakteri kaldır ve local.parts.group = root olacak şekilde devret
+    if (local?.parts?.group) scene.remove(local.parts.group);
+
+    // Oyuncu objesi olarak root'u kullan
+    local.parts = { group: root };
+    scene.add(root);
+    usingGLBAvatar = true;
+  }
+
+  function swapLocalAvatarFromGLB(url) {
+    if (!gltfLoader) return;
+    gltfLoader.load(url, (gltf) => {
+      avatarGLB && scene.remove(avatarGLB);   // önceki varsa kaldır
+      avatarGLB = gltf.scene;
+
+      installAvatarRoot(avatarGLB);
+      buildActionsFromClips(avatarGLB, gltf.animations || []);
+
+      // başlangıç animasyonu
+      if (actions.idle) playAction('idle', 0.12, 1.0);
+      else if (actions.walk) playAction('walk', 0.12, 0.6);
+    }, undefined, (err) => {
+      console.error('[Alioba] GLB load error:', err);
+    });
+  }
+
 
   // === Registry & Collisions ===
   const npcRegistry = new Map();             // key -> THREE.Group (root)
@@ -788,6 +884,9 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         name: 'Stack Module',
         colliderPadding: 0.25
       });
+      
+      swapLocalAvatarFromGLB('/models/alioba/Alioba_Merged_Animations.glb');
+
 
       // window.AGORALazy.register({ name:'props-zone-1', x: padPos.x + 28, z: padPos.z, url:'/models/props_pack.glb', dist:30, unload:true });
     }
@@ -840,6 +939,13 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     parts.group.position.y = 0;
   }
   function playEmote(parts, id, type, ms=1200){
+        // GLB avatar kullanıyorsak emote'ları uygun kliplere map'le
+    if (usingGLBAvatar) {
+      if (type === 'dance' && actions.dance) playAction('dance', 0.12, 1.0);
+      else if (type === 'clap' && actions.clap) playAction('clap', 0.12, 1.0);
+      return; // stylized kemik dönüşlerini atla
+    }
+
     const baseColor = parts.torso.material.color.clone();
     const token = (emoteTokens.get(id) || 0) + 1;
     emoteTokens.set(id, token);
@@ -959,6 +1065,23 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
 
     checkHotspots();
+
+      // Animasyon güncelle
+  if (mixer) mixer.update(dt);
+
+  // Yürü/koş durumuna göre aksiyon
+  if (usingGLBAvatar) {
+    const moving = Math.abs(forward) + Math.abs(strafe) > 0.01;
+    const wantRun = moving && keys.has("ShiftLeft") && !!actions.run;
+    const nextName =
+      moving ? (wantRun ? 'run' : (actions.walk ? 'walk' : currentActionName))
+            : (actions.idle ? 'idle' : currentActionName);
+
+    if (nextName && nextName !== currentActionName) {
+      playAction(nextName, 0.12, wantRun ? 1.0 : 0.85);
+    }
+  }
+
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
