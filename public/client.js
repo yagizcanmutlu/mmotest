@@ -48,11 +48,32 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     window.__AGORA_SELECTED_NFT__ = nft || null;
   }
 
-  // index.html, play butonunda bu olayı dispatch ediyor
+  // 1) index.html'den gelen event ile başlat
   window.addEventListener('agoraInit', (e) => {
-    const payload = e?.detail || {};
-    window.agoraInjectedPayload = payload; // fallback için cache
-    startGameFromPayload(payload);
+    const pl = e?.detail || {};
+    window.agoraInjectedPayload = pl;     // cache
+    startGameFromPayload(pl);
+  });
+
+  // 2) Fallback: Her ihtimale karşı, event gelmezse "Giriş" click'i lokal payload kurup başlatsın
+  if (playBtn) playBtn.addEventListener('click', () => {
+    // Eğer index.html zaten agoraInit yolladıysa, burada tekrar başlatma.
+    if (window.agoraInjectedPayload) return;
+
+    const desiredName = (nameInput?.value || '').trim().slice(0, 20) || 'Player';
+    // Formda gender kaldırıldıysa 'unknown' ya da 'male' ver; varsa radio’dan oku:
+    const genderInput = document.querySelector('input[name="gender"]:checked');
+    const gender = (genderInput?.value) || 'unknown';
+
+    const pl = {
+      playerName: desiredName,
+      gender,
+      wallet: window.walletFromHost || null,
+      nft: window.selectedNFT || null   // index.html bu değişkenleri set ediyorsa
+    };
+
+    window.agoraInjectedPayload = pl;
+    startGameFromPayload(pl);
   });
 
     // === Alioba avatar (tek GLB, çoklu klip) entegrasyonu ===
@@ -884,7 +905,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         name: 'Stack Module',
         colliderPadding: 0.25
       });
-      
+
       swapLocalAvatarFromGLB('/models/alioba/Alioba_Merged_Animations.glb');
 
 
