@@ -170,6 +170,16 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     });
   }
 
+  {
+  const parts = buildStylizedChar(0xffe4c4);
+  local.parts = parts;
+  scene.add(parts.group);
+
+  // >> EKLE: başlangıçta boyu insani bir değere çek
+  setTimeout(() => setPlayerHeight(1.65), 0);
+}
+
+
 
   // === Registry & Collisions ===
   const npcRegistry = new Map();             // key -> THREE.Group (root)
