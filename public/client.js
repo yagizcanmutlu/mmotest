@@ -37,9 +37,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     local.gender = gender;
     if (name) updateNameTag(local, name);
 
-    // 2) HUD
-    setHudGender(gender);
-
     // 3) server sync
     socket.emit("profile:update", { name, gender, wallet, nft });
     socket.emit("join",           { name, gender, wallet, nft });
