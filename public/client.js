@@ -241,6 +241,85 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const MAX_COLLIDER_RADIUS = 12;
   let colliderDebug = null;
 
+    // ======= AŞAMA: MERDİVEN/DUVAR SİSTEMİ =======
+  const AABB_WALLS = [];   // {name,minX,maxX,minZ,maxZ,yMin,yMax}
+  const HEIGHT_ZONES = []; // {name,minX,maxX,minZ,maxZ,y0,y1,axis} axis: 'x' | 'z' | null
+  const zoneDebug = new THREE.Group(); scene.add(zoneDebug);
+
+  function addWallRect(name, x1, z1, x2, z2, yMin=-1, yMax=3){
+    const minX = Math.min(x1,x2), maxX = Math.max(x1,x2);
+    const minZ = Math.min(z1,z2), maxZ = Math.max(z1,z2);
+    AABB_WALLS.push({ name, minX, maxX, minZ, maxZ, yMin, yMax });
+    // debug çizgisi
+    if (DEBUG_COLLIDERS){
+      const g = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(minX,0.05,minZ), new THREE.Vector3(maxX,0.05,minZ),
+        new THREE.Vector3(maxX,0.05,minZ), new THREE.Vector3(maxX,0.05,maxZ),
+        new THREE.Vector3(maxX,0.05,maxZ), new THREE.Vector3(minX,0.05,maxZ),
+        new THREE.Vector3(minX,0.05,maxZ), new THREE.Vector3(minX,0.05,minZ),
+      ]);
+      const m = new THREE.LineBasicMaterial({ color: 0xff3a66, transparent:true, opacity:0.8 });
+      zoneDebug.add(new THREE.LineSegments(g, m));
+    }
+  }
+
+  function addHeightZoneRect(name, x1, z1, x2, z2, y0=0, y1=1, axis=null){
+    const minX = Math.min(x1,x2), maxX = Math.max(x1,x2);
+    const minZ = Math.min(z1,z2), maxZ = Math.max(z1,z2);
+    HEIGHT_ZONES.push({ name, minX, maxX, minZ, maxZ, y0, y1, axis });
+    // debug dolgusu
+    if (DEBUG_COLLIDERS){
+      const geo = new THREE.PlaneGeometry(maxX-minX, maxZ-minZ);
+      const mat = new THREE.MeshBasicMaterial({ color:0x33ffaa, transparent:true, opacity:0.18, side:THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI/2;
+      mesh.position.set((minX+maxX)/2, 0.02, (minZ+maxZ)/2);
+      zoneDebug.add(mesh);
+    }
+  }
+
+  function insideRect(x,z, r){
+    return (x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ);
+  }
+
+  // Yükseklik hedefi (merdiven/ramp/saha)
+  function targetYAt(x,z){
+    let bestY = 0;
+    for (const h of HEIGHT_ZONES){
+      if (!insideRect(x,z,h)) continue;
+      if (!h.axis){ bestY = Math.max(bestY, h.y1); continue; }
+      // eğim: dikdörtgen boyunca 0→1
+      if (h.axis === 'z'){
+        const t = (z - h.minZ) / Math.max(1e-6, (h.maxZ - h.minZ));
+        bestY = Math.max(bestY, h.y0 + t*(h.y1 - h.y0));
+      } else {
+        const t = (x - h.minX) / Math.max(1e-6, (h.maxX - h.minX));
+        bestY = Math.max(bestY, h.y0 + t*(h.y1 - h.y0));
+      }
+    }
+    return bestY;
+  }
+
+  // Dikdörtgen duvar çarpışması (XZ)
+  function collidesRectAt(nx, nz, py){
+    for (const r of AABB_WALLS){
+      if (py < r.yMin || py > r.yMax) continue;
+      if (nx >= r.minX && nx <= r.maxX && nz >= r.minZ && nz <= r.maxZ) return true;
+    }
+    return false;
+  }
+
+  // Kullanışlı: Pozisyon logger (ALT+L)
+  window.logPos = () => {
+    const p = local?.parts?.group?.position || {x:0,y:0,z:0};
+    console.log(`[pos] x=${p.x.toFixed(2)} z=${p.z.toFixed(2)} y=${p.y.toFixed(2)}`);
+  };
+  document.addEventListener('keydown', (e)=>{ if(e.altKey && e.key.toLowerCase()==='l') window.logPos(); });
+  window.Admin = (window.Admin||{});
+  window.Admin.toggleZones = () => { zoneDebug.visible = !zoneDebug.visible; console.log('Zones visible:', zoneDebug.visible); };
+  document.addEventListener('keydown', (e)=>{ if(e.altKey && e.key.toLowerCase()==='z') window.Admin.toggleZones(); });
+
+
   // === GROUND CONFIG ===
   const GROUND_MODE = "custom"; // "custom" | "mars"
   const GROUND_CUSTOM_URL  = "/textures/floor.webp";
