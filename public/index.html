@@ -53,6 +53,77 @@
     .nft-mini{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.35);padding:8px;border-radius:10px}
     .nft-mini img{width:40px;height:40px;border-radius:8px;object-fit:cover}
   </style>
+
+  <style>
+  :root{
+    --chat-max-w: 560px;
+    --chat-mob-h: 24vh;
+    --chat-desk-h: 28vh;
+    --joy-safe-left: 12px; /* JS günceller */
+  }
+
+  /* Chat panel konum/ölçü (mevcut .chat kurallarını override eder) */
+  #chatPanel{
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    margin: 0 auto;
+    width: auto;
+    max-width: var(--chat-max-w);
+    background: rgba(0,0,0,.35);
+    border: 1px solid rgba(255,255,255,.15);
+    border-radius: 14px;
+    backdrop-filter: blur(4px);
+    z-index: 6000;
+    transition: transform .25s ease, opacity .2s ease;
+  }
+
+  /* İç düzen – mevcut id’leri kullanır */
+  #chatLog{
+    max-height: var(--chat-desk-h);
+    overflow-y: auto;
+    padding: 10px 12px 6px;
+  }
+  #chatText{
+    width: 100%;
+    display: block;
+    padding: 10px 12px;
+    background: rgba(10,10,15,.75);
+    border: 1px solid rgba(255,255,255,.15);
+    border-radius: 10px;
+    margin: 6px 8px 10px;
+    color: #e7f6ff;
+  }
+  #chatSend{ position: absolute; right: 14px; bottom: 14px; padding: 8px 12px; border-radius: 10px; }
+
+  /* Toggle butonu (JS ekler) */
+  #chatToggle{
+    position: fixed;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 6001;
+    width: 44px; height: 44px; border-radius: 999px;
+    background: rgba(0,0,0,.55);
+    border: 1px solid rgba(255,255,255,.25);
+    color: #bfefff;
+    font-size: 20px; display: grid; place-items: center;
+    backdrop-filter: blur(3px);
+  }
+
+  /* Mobilde kısalt + joystick’ten kaç */
+  @media (max-width: 900px){
+    #chatPanel{ left: var(--joy-safe-left); right: 12px; }
+    #chatLog{ max-height: var(--chat-mob-h); }
+  }
+
+  /* Kapalı durum animasyonu */
+  #chatPanel.is-hidden{
+    transform: translateY(calc(100% + 24px));
+    opacity: 0; pointer-events: none;
+  }
+</style>
+
 </head>
 
 <!-- three import map (client.js'ten önce yüklenmeli) -->
@@ -105,7 +176,7 @@
     </div>
 
     <!-- Chat -->
-    <div class="chat">
+    <div id="chatPanel" class="chat">
       <div class="chat-log" id="chatLog"></div>
       <div class="chat-input">
         <input id="chatText" placeholder="Mesaj yaz… (/wave, /dance …)" />
@@ -320,6 +391,72 @@
     });
     // window.socket = socket; // gerekirse globalleştir
   </script>
+
   <script type="module" src="/client.js"></script>
+
+  <script>
+(function bootstrapChatOverlay(){
+  const chatLog  = document.getElementById('chatLog');
+  const chatText = document.getElementById('chatText');
+  const chatSend = document.getElementById('chatSend');
+  const chatPanel= document.getElementById('chatPanel');
+  if(!chatLog || !chatText || !chatSend || !chatPanel){ console.warn('[Chat] eksik eleman'); return; }
+
+  // Toggle butonu yoksa oluştur
+  let chatToggle = document.getElementById('chatToggle');
+  if(!chatToggle){
+    chatToggle = document.createElement('button');
+    chatToggle.id = 'chatToggle';
+    chatToggle.type = 'button';
+    chatToggle.title = 'Sohbeti aç/kapat (Y)';
+    chatToggle.textContent = '💬';
+    document.body.appendChild(chatToggle);
+  }
+
+  function openChat(){
+    chatPanel.classList.remove('is-hidden');
+    try{ document.exitPointerLock?.(); }catch{}
+    setTimeout(()=>chatText.focus(), 0);
+  }
+  function closeChat(){
+    chatPanel.classList.add('is-hidden');
+    try{ window.renderer?.domElement?.requestPointerLock?.(); }catch{}
+  }
+  function toggleChat(){ chatPanel.classList.contains('is-hidden') ? openChat() : closeChat(); }
+
+  chatToggle.addEventListener('click', toggleChat);
+
+  // Kısayollar: Y -> toggle, Enter veya '/' (yazmıyorken) -> aç, ESC -> kapat
+  document.addEventListener('keydown', (e)=>{
+    const tag = (document.activeElement?.tagName || '').toLowerCase();
+    const typing = (tag === 'input' || tag === 'textarea');
+    if(e.key === 'Escape'){ closeChat(); e.preventDefault(); }
+    else if(!typing && (e.key === 'Enter' || e.key === '/')){ openChat(); e.preventDefault(); }
+    else if(e.key.toLowerCase() === 'y'){ toggleChat(); e.preventDefault(); }
+  });
+
+  // Mobilde joystick’e çarpmaması için sol boşluğu ölç
+  function updateChatLayout(){
+    const joy = document.getElementById('joystick');
+    let safeLeft = 12;
+    if(joy){
+      const r = joy.getBoundingClientRect();
+      if(r.bottom > (window.innerHeight - 120) && r.left < 160){
+        safeLeft = Math.min(r.right + 12, window.innerWidth * 0.25);
+      }
+    }
+    document.documentElement.style.setProperty('--joy-safe-left', safeLeft + 'px');
+  }
+  window.addEventListener('resize', updateChatLayout);
+  window.addEventListener('orientationchange', updateChatLayout);
+  setTimeout(updateChatLayout, 50);
+
+  // Varsayılan: mobilde kapalı, desktopta açık
+  if (window.matchMedia('(max-width: 900px)').matches) chatPanel.classList.add('is-hidden');
+})();
+</script>
+
+
+
 </body>
 </html>
