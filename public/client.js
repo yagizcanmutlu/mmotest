@@ -575,6 +575,27 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }
 
   // Çarpışma fonksiyonları
+
+    // Tek bir NPC için collider aç/kapat
+  function setCollisionEnabledFor(key, enabled, padding = 0.30){
+    const idx = colliders.findIndex(c => c.key === key);
+    if (enabled) {
+      if (idx !== -1) return;                 // zaten var
+      const root = npcRegistry.get(key);
+      if (!root) return;
+      const info = computeColliderInfo(root, padding);
+      const col = { key, root, r: info.r, padding, offX: info.offX, offZ: info.offZ };
+      colliders.push(col);
+      ensureDebugRing(col);                   // DEBUG_COLLIDERS true ise halka çizer
+    } else {
+      if (idx !== -1) {
+        const c = colliders[idx];
+        if (c._ring) colliderDebug.remove(c._ring);
+        colliders.splice(idx, 1);
+      }
+    }
+  }
+
   function collidesAt(nx, nz){
     for (const c of colliders){
       const cx = (c.root?.position.x ?? c.x) + (c.offX || 0);
@@ -912,6 +933,45 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         name: 'Stack Module',
         colliderPadding: 0.25
       });
+
+      // Neon Skyscraper (yeni varlık)
+      {
+        // Pad merkezini kullanalım:
+        const c = getAnyPadCenter();
+        spawnNPC('/models/Agora_Futuristic_Skyscraper_texture.glb', {
+          onPad: false,
+          x: c.x + 52,             // konum: pad’e göre sağa
+          z: c.z - 24,             // konum: pad’e göre ileri/geri
+          y: 0.0,
+          ry: Math.PI * 0.05,      // hafif yana çevir
+          targetDiag: 28,          // boyut (diyagonale göre); alternatif: scale: 1.2
+          name: 'Neon Skyscraper', // kayıt anahtarı
+          collision: true,         // çarpışma HALKASI aktif
+          colliderPadding: 0.35    // halkayı bir tık geniş tut
+        });
+      }
+      // Boyutu sahnede değiştir:
+      const tower = getNPC('Neon Skyscraper');
+      if (tower) {
+        tower.scale.setScalar(1.15);        // komple ölçek
+        tower.rotation.y = Math.PI * 0.08;  // biraz daha çevir
+        // taşıma:
+        // setNPCPosition('Neon Skyscraper', c.x + 60, c.z - 18, 0.0);
+      }
+      window.AGORALazy.register({
+        name: 'Neon Skyscraper (lazy)',
+        x: padPos.x + 52,
+        z: padPos.z - 24,
+        url: '/models/Agora_Futuristic_Skyscraper_texture.glb',
+        dist: 35,       // 35m kalınca yükle
+        unload: true    // uzaklaşınca boşalt
+      });
+
+
+      // Çarpışma halkası aç/kapat:
+      setCollisionEnabledFor('Neon Skyscraper', false); // devre dışı
+      setCollisionEnabledFor('Neon Skyscraper', true, 0.40); // yeniden etkin (padding’i 0.40 yap)
+
 
       swapLocalAvatarFromGLB('/models/alioba/Alioba_Merged_Animations.glb');
 
