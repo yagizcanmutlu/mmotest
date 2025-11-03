@@ -26,6 +26,62 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
 
+    // Dünya sınırı (pad merkezine göre)
+  let worldCenter = new THREE.Vector3(0, 0, 0);
+  const WORLD_BOUNDS = {
+    radius: 160,   // izin verilen yarıçap (metre)
+    soft: 20       // kenarda “yumuşak bölge” (uayrı uyarı/fade için)
+  };
+
+    // === Dünya Sınırı Görseli (Kırmızı Ring) ===
+  let boundaryRing = null;
+  let SHOW_WORLD_RING = true;
+
+  function ensureBoundaryRing(){
+    if (!SHOW_WORLD_RING){
+      if (boundaryRing) boundaryRing.visible = false;
+      return;
+    }
+    // yoksa oluştur, varsa güncelle
+    if (!boundaryRing){
+      const geo = new THREE.RingGeometry(WORLD_BOUNDS.radius - 0.12, WORLD_BOUNDS.radius + 0.12, 128);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xff3355, transparent: true, opacity: 0.55, depthWrite: false
+      });
+      boundaryRing = new THREE.Mesh(geo, mat);
+      boundaryRing.rotation.x = -Math.PI/2;
+      boundaryRing.position.set(worldCenter.x, 0.045, worldCenter.z);
+      boundaryRing.renderOrder = 9998;
+      scene.add(boundaryRing);
+    } else {
+      boundaryRing.visible = true;
+      boundaryRing.position.set(worldCenter.x, 0.045, worldCenter.z);
+      boundaryRing.geometry.dispose();
+      boundaryRing.geometry = new THREE.RingGeometry(WORLD_BOUNDS.radius - 0.12, WORLD_BOUNDS.radius + 0.12, 128);
+    }
+  }
+
+
+  // Kenarda oyuncuyu içeri çeken basit kelepçe (clamp).
+  // Pozisyonu içeri “sınır çemberine” projeler ve 1..0 arası bir yavaşlatma katsayısı döner.
+  function enforceWorldBounds(pos){
+    const dx = pos.x - worldCenter.x;
+    const dz = pos.z - worldCenter.z;
+    const d  = Math.hypot(dx, dz);
+    const R  = WORLD_BOUNDS.radius;
+    if (d <= R) return 1;
+
+    // Dışarı taşmış: konumu sınır çemberinin üzerine al
+    const k = Math.max(0.0001, R / d);
+    pos.x = worldCenter.x + dx * k;
+    pos.z = worldCenter.z + dz * k;
+
+    // Kenar bölgesindeki yavaşlatma (istersen hız ölçeği olarak da kullanabilirsin)
+    const over = d - R;
+    return Math.max(0, 1 - over / Math.max(1, WORLD_BOUNDS.soft));
+  }
+
+
   // === CİNSİYET KALDIRILDI — yalnızca isim, wallet ve NFT ile giriş ===
   function startGameFromPayload(pl = {}) {
     const name   = (pl.playerName || '').trim() || 'Player';
@@ -179,7 +235,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const npcRegistry = new Map();             // key -> THREE.Group (root)
   const colliders  = [];                     // { key, root, r, padding }
   const PLAYER_RADIUS = 0.45;
-  const COLLISION_ENABLED = true;
+  let COLLISION_ENABLED = true;
 
   const DEBUG_COLLIDERS = true;              // görünmez duvar teşhisi için
   const MAX_COLLIDER_RADIUS = 12;
@@ -875,6 +931,26 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       : new THREE.Vector3(local.parts.group.position.x, 0, local.parts.group.position.z);
     addHotspotDisk("AgoraPad", padPos.x, padPos.z, 18);
 
+        // Dünya merkezi = en yakın pad merkezi
+    worldCenter = padPos.clone();
+    // Kırmızı sınır ringini hazırla/güncelle
+    ensureBoundaryRing();
+
+    // (İsteğe bağlı) Debug: sınır çemberini görsel olarak çiz
+    if (DEBUG_COLLIDERS) {
+      const ringGeo = new THREE.RingGeometry(
+        WORLD_BOUNDS.radius - 0.1,
+        WORLD_BOUNDS.radius + 0.1,
+        128
+      );
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x22ffaa, transparent: true, opacity: 0.15, depthWrite:false });
+      const ring    = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(worldCenter.x, 0.03, worldCenter.z);
+      colliderDebug.add(ring);
+    }
+
+
     // Gezegenler
     (planets || []).forEach(p => {
       const x = (p.x || 0) * PLANET_DIST_MUL;
@@ -1133,6 +1209,18 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
     local.parts.group.rotation.y = local.yaw;
 
+        // ... mevcut hareket/çarpışma çözümünden sonra:
+    const slowK = enforceWorldBounds(local.parts.group.position);
+
+    // (İsteğe bağlı) kenarda bir kez uyar
+    if (slowK < 1) {
+      if (!local._edgeWarned) {
+        showToast("Güvenli alan bitti. Geri dön!");
+        local._edgeWarned = true;
+        setTimeout(() => (local._edgeWarned = false), 1200);
+      }
+    }
+
     // Camera follow
     const camX = local.parts.group.position.x - Math.sin(local.yaw) * camDist;
     const camZ = local.parts.group.position.z - Math.cos(local.yaw) * camDist;
@@ -1190,5 +1278,110 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   window.addEventListener("beforeunload", () => {
     try { socket?.close(); } catch(e) {}
   });
+
+  // Hızlı kısayollar: B = sınır ring aç/kapa, F10/` = admin panel aç/kapa
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase?.() === 'b' && !chatFocus){
+    SHOW_WORLD_RING = !SHOW_WORLD_RING;
+    ensureBoundaryRing();
+    e.preventDefault();
+  }
+  if ((e.key === 'F10' || e.key === '`') && !e.repeat){
+    window.AGORA_ADMIN?.toggle();
+    e.preventDefault();
+  }
+}, { passive:false });
+
+// === Minimal Admin Panel (FPS dostu) ===
+(function setupAdmin(){
+  const rootEl = document.getElementById('root');
+  if (!rootEl) return;
+
+  const panel = document.createElement('div');
+  panel.style.cssText = `
+    position:fixed; top:12px; right:12px; z-index:1000;
+    width: 260px; max-width:92vw; padding:10px;
+    background:rgba(8,10,20,0.92); border:1px solid #234; border-radius:12px;
+    color:#cfe; font: 600 12px/1.4 Inter, system-ui; display:none; backdrop-filter:blur(4px);
+  `;
+  panel.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
+      <div style="color:#9cf;font-weight:800">Admin</div>
+      <button id="admClose" class="help-btn" style="width:28px;height:28px;line-height:0">×</button>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+      <input id="admRing" type="checkbox" checked />
+      Sınır çemberi (kırmızı)
+    </label>
+
+    <div style="margin:6px 0">
+      <div style="opacity:.9;margin-bottom:4px">Yarıçap: <b id="admRVal">${WORLD_BOUNDS.radius}</b> m</div>
+      <input id="admRadius" type="range" min="60" max="400" step="2" value="${WORLD_BOUNDS.radius}" style="width:100%">
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+      <input id="admCollide" type="checkbox" ${COLLISION_ENABLED ? 'checked' : ''}/>
+      Çarpışma (duvarlar/NPC/objeler)
+    </label>
+
+    <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+      <input id="admColDbg" type="checkbox" ${colliderDebug.visible ? 'checked' : ''}/>
+      Collider halkaları (debug)
+    </label>
+
+    <small style="opacity:.75">Kısayollar: <b>B</b> ring aç/kapa · <b>F10</b> veya <b>\`</b> panel</small>
+  `;
+  rootEl.appendChild(panel);
+
+  const btnClose = panel.querySelector('#admClose');
+  const chkRing  = panel.querySelector('#admRing');
+  const rngR     = panel.querySelector('#admRadius');
+  const lblR     = panel.querySelector('#admRVal');
+  const chkCol   = panel.querySelector('#admCollide');
+  const chkDbg   = panel.querySelector('#admColDbg');
+
+  chkRing.addEventListener('change', () => {
+    SHOW_WORLD_RING = chkRing.checked;
+    ensureBoundaryRing();
+  });
+  rngR.addEventListener('input', () => {
+    WORLD_BOUNDS.radius = Number(rngR.value) || WORLD_BOUNDS.radius;
+    lblR.textContent = WORLD_BOUNDS.radius;
+    ensureBoundaryRing();
+  });
+  chkCol.addEventListener('change', () => {
+    COLLISION_ENABLED = !!chkCol.checked;
+  });
+  chkDbg.addEventListener('change', () => {
+    colliderDebug.visible = !!chkDbg.checked;
+  });
+  btnClose.addEventListener('click', () => {
+    panel.style.display = 'none';
+  });
+
+  // HUD’a küçük bir dişli ekle (opsiyonel, yoksa F10/` ile aç)
+  try{
+    const hud = document.querySelector('.hud');
+    if (hud){
+      const gear = document.createElement('button');
+      gear.textContent = '⚙️';
+      gear.title = 'Admin';
+      gear.className = 'help-btn';
+      gear.style.marginLeft = '6px';
+      hud.appendChild(gear);
+      gear.addEventListener('click', () => {
+        panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none';
+      });
+    }
+  }catch{}
+
+  window.AGORA_ADMIN = {
+    toggle(){ panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none'; },
+    show(){ panel.style.display = 'block'; },
+    hide(){ panel.style.display = 'none'; }
+  };
+})();
+
 
 })();
