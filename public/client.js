@@ -738,9 +738,12 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       const rr = (c.r || 1) + PLAYER_RADIUS;
       const dx = nx - cx, dz = nz - cz;
       if (dx*dx + dz*dz < rr*rr) return true;
+      // Duvar dikdörtgenleri
+      if (collidesRectAt(nx, nz, local.parts.group.position.y)) return true;
     }
     return false;
   }
+  
   function pushOutFromColliders(pos){
     let px = pos.x, pz = pos.z;
     for (const c of colliders){
@@ -759,6 +762,15 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     pos.x = px; pos.z = pz;
   }
   function resolveCollision(px, pz, nx, nz){
+    // dikdörtgen duvarla da çöz
+    if (collidesRectAt(nx, nz, local.parts.group.position.y)) {
+      const a = !collidesRectAt(nx, pz, local.parts.group.position.y);
+      const b = !collidesRectAt(px, nz, local.parts.group.position.y);
+      if (a && !b) return { x:nx, z:pz };
+      if (!a && b) return { x:px, z:nz };
+      return { x:px, z:pz };
+    }
+
     if (!collidesAt(nx, nz)) return { x:nx, z:nz };
     if (!collidesAt(nx, pz)) return { x:nx, z:pz };
     if (!collidesAt(px, nz)) return { x:px, z:nz };
@@ -1133,6 +1145,40 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
           dist: 36,
           unload: true
         });
+
+              // === Mini Market iç mekân & merdiven / platform ===
+      (function setupMiniMarketZones(){
+        const root = getNPC('Mini Market');   // spawnNPC(... name:'Mini Market', ...)
+        if (!root) { console.warn('Mini Market henüz yüklenmedi'); return; }
+
+        const bx = root.position.x;
+        const bz = root.position.z;
+
+        // 1) Platform yükseltisi (dükkânın önü ve içi — düz 0.9m)
+        addHeightZoneRect('market-floor', bx-6.6, bz+3.6, bx+6.6, bz+6.0, 0.9, 0.9, null);
+
+        // 2) Merdiven rampası (sokaktan platforma lineer yüksel)
+        // Z ekseni boyunca 0.0 → 0.9; aralığı geniş tut (ayarla)
+        addHeightZoneRect('market-stairs', bx-3.2, bz+2.0, bx+1.2, bz+3.6, 0.0, 0.9, 'z');
+
+        // 3) Ön cam/duvar — ortada kapı boşluğu bırak
+        // Sol parça
+        addWallRect('market-front-L', bx-6.6, bz+3.6, bx-1.2, bz+3.9, 0.0, 2.5);
+        // Sağ parça
+        addWallRect('market-front-R', bx+1.2, bz+3.6, bx+6.6, bz+3.9, 0.0, 2.5);
+        // Kapı boşluğu: (bx-1.2 .. bx+1.2) aralığı BİLEREK eklenmedi.
+
+        // 4) Yan ve arka duvarlar (kalın dikdörtgenler)
+        addWallRect('market-left',  bx-6.8, bz+3.4, bx-6.5, bz+6.0, 0.0, 3.0);
+        addWallRect('market-right', bx+6.5, bz+3.4, bx+6.8, bz+6.0, 0.0, 3.0);
+        addWallRect('market-back',  bx-6.6, bz+5.7, bx+6.6, bz+6.0, 0.0, 3.0);
+
+        // 5) İsteğe bağlı: Vitrin/tezgâh gibi iç engeller
+        // addWallRect('market-shelf', bx-2.0, bz+4.2, bx-0.8, bz+5.6, 0.8, 1.6);
+
+        console.log('[MiniMarket] bölgeler yerleştirildi. ALT+L ile konum, ALT+Z ile görünürlük.');
+      })();
+
       }
 
 
@@ -1313,6 +1359,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         setTimeout(() => (local._edgeWarned = false), 1200);
       }
     }
+
+    // Yükseklik (merdiven/ramp/zemin)
+    const wantY = targetYAt(local.parts.group.position.x, local.parts.group.position.z);
+    local.parts.group.position.y = THREE.MathUtils.lerp(local.parts.group.position.y, wantY, 0.25);
+
 
     // Camera follow
     const camX = local.parts.group.position.x - Math.sin(local.yaw) * camDist;
