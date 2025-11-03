@@ -4,11 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>AGORA – Sosyal Hub</title>
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    html,body{height:100%;background:#000;font-family:Inter,system-ui,Arial}
-    #root{height:100dvh;width:100vw;overflow:hidden;position:relative}
 
+  <style>
+    /* ========= Core & Scene Lock ========= */
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#000;font-family:Inter,system-ui,Arial;overscroll-behavior:none;overflow:hidden}
+    #root{position:fixed;inset:0;width:100vw;height:100vh;overflow:hidden}
+    @supports(height:100dvh){#root{height:100dvh}}
+
+    /* ========= HUD ========= */
     .hud{position:absolute;top:12px;left:12px;display:flex;gap:10px;align-items:center;z-index:10}
     .logo{color:#8ef;font-weight:800;letter-spacing:.3px;text-shadow:0 0 8px #48f}
     .points{padding:6px 10px;border:1px solid #2a5;border-radius:8px;color:#aef;background:rgba(10,30,18,.35);backdrop-filter:blur(4px)}
@@ -19,78 +23,22 @@
     .help ul{padding-left:18px}
     .help small{opacity:.8}
 
+    /* ========= CTA / Join Card ========= */
     .cta{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:12;background:rgba(0,0,0,.55);backdrop-filter:blur(4px)}
     .card{padding:18px 16px;background:rgba(8,10,20,.9);border:1px solid #234;border-radius:14px;width:320px;display:flex;flex-direction:column;gap:10px}
     .card h1{color:#9cf;font-size:18px}
     .card input{padding:10px;border-radius:10px;border:1px solid #345;background:#0a0f14;color:#cfe}
     .card button{padding:12px;border-radius:12px;border:0;font-weight:700;background:#1d8f4a;color:#eafff0;cursor:pointer}
 
-    .chat{position:absolute;right:12px;bottom:12px;width:340px;z-index:10}
-    .chat-log{height:150px;overflow:auto;background:rgba(5,7,12,.55);border:1px solid #223;border-radius:10px;padding:8px;color:#cfe}
-    .chat-log p{margin:4px 0}
-    .chat-input{margin-top:6px;display:flex;gap:6px}
-    .chat-input input{flex:1;padding:10px;border-radius:10px;border:1px solid #345;background:#0a0f14;color:#cfe}
-    .chat-input button{padding:10px 12px;border-radius:10px;border:0;background:#29549b;color:#e7f0ff;cursor:pointer}
-
-    .floating{position:absolute;top:60px;left:50%;transform:translateX(-50%);color:#aff;text-shadow:0 0 8px #0ff;z-index:10;font-weight:700;display:none}
-
-    #joystick{position:absolute;left:14px;bottom:14px;width:120px;height:120px;border-radius:50%;border:1px solid #234;background:rgba(10,14,20,.35);backdrop-filter:blur(3px);z-index:11;touch-action:none}
-    #stick{position:absolute;left:50%;top:50%;width:56px;height:56px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(80,180,255,.35);border:1px solid #2a4}
-    #lookpad{position:absolute;right:0;bottom:0;width:40vw;height:55vh;z-index:11;touch-action:none}
-
-    /* NFT modal */
-    .nft-modal{position:fixed;inset:0;z-index:9998;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
-    .nft-card{width:min(920px,92vw);max-height:86vh;overflow:auto;background:rgba(8,10,20,.96);border:1px solid #234;border-radius:16px;padding:14px;color:#d9ecff}
-    .nft-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:10px}
-    .nft-tile{border:1px solid #334;border-radius:12px;padding:8px;background:#0b0f18;cursor:pointer;display:flex;flex-direction:column;gap:6px}
-    .nft-tile img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px}
-    .nft-tile h4{font:700 13px/1.2 Inter,system-ui}
-    .nft-tile p{font:600 12px/1.2 Inter,system-ui;color:#9ad1ff}
-    .nft-tile.selected{outline:2px solid #1d8f4a;box-shadow:0 0 0 2px #1d8f4a inset}
-    .nft-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
-    .btn{padding:10px 12px;border-radius:10px;border:1px solid #2a4;background:#0a151a;color:#d9ecff;cursor:pointer}
-    .btn.-primary{background:#1d8f4a;border-color:#2e9d5d;color:#ecfff2;font-weight:800}
-    .nft-mini{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.35);padding:8px;border-radius:10px}
-    .nft-mini img{width:40px;height:40px;border-radius:8px;object-fit:cover}
-  </style>
-
-  <style>
-    /* Genel */
-    *{margin:0;padding:0;box-sizing:border-box}
-    html,body{
-      height:100%;
-      background:#000;
-      font-family:Inter,system-ui,Arial;
-      overscroll-behavior:none;
-      overflow:hidden;            /* yarım ekran zıplamasını önler */
+    /* NFT mini şerit – kontrast fix */
+    .card .nft-mini{
+      background:linear-gradient(0deg,rgba(14,28,44,.92),rgba(26,48,84,.92));
+      border:1px solid #1e3a5f;border-radius:10px;
     }
+    #chosenNftName{color:#eaf7ff}
+    #chosenNftStats{color:#9ad1ff}
 
-    /* Sahneyi ekrana kilitle */
-    #root{
-      position:fixed; inset:0;
-      width:100vw; height:100vh; overflow:hidden;
-    }
-    @supports(height:100dvh){ #root{ height:100dvh } }
-
-    /* HUD */
-    .hud{position:absolute;top:12px;left:12px;display:flex;gap:10px;align-items:center;z-index:10}
-    .logo{color:#8ef;font-weight:800;letter-spacing:.3px;text-shadow:0 0 8px #48f}
-    .points{padding:6px 10px;border:1px solid #2a5;border-radius:8px;color:#aef;background:rgba(10,30,18,.35);backdrop-filter:blur(4px)}
-    .help-btn{margin-left:8px;width:32px;height:32px;border-radius:8px;border:1px solid #234;background:rgba(8,10,20,.6);color:#9cf;cursor:pointer;font-weight:800}
-
-    .help{position:absolute;top:56px;left:12px;z-index:12;display:none;background:rgba(8,10,20,.92);border:1px solid #234;border-radius:12px;color:#cfe;padding:12px;max-width:320px}
-    .help h3{margin:0 0 6px 0;color:#9cf}
-    .help ul{padding-left:18px}
-    .help small{opacity:.8}
-
-    /* Giriş kartı */
-    .cta{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:12;background:rgba(0,0,0,.55);backdrop-filter:blur(4px)}
-    .card{padding:18px 16px;background:rgba(8,10,20,.9);border:1px solid #234;border-radius:14px;width:320px;display:flex;flex-direction:column;gap:10px}
-    .card h1{color:#9cf;font-size:18px}
-    .card input{padding:10px;border-radius:10px;border:1px solid #345;background:#0a0f14;color:#cfe}
-    .card button{padding:12px;border-radius:12px;border:0;font-weight:700;background:#1d8f4a;color:#eafff0;cursor:pointer}
-
-    /* === CHAT: Sağ-alta sabit, varsayılan açık === */
+    /* ========= Chat (sağ-alta sabit) ========= */
     .chat{
       position:fixed;
       right:clamp(8px,2vw,16px);
@@ -98,7 +46,7 @@
       width:min(360px,90vw);
       z-index:30;
     }
-    .chat.-hidden{ display:none; }            /* kapalı durum */
+    .chat.-hidden{display:none}
     .chat-log{
       height:150px;overflow:auto;background:rgba(5,7,12,.55);
       border:1px solid #223;border-radius:10px;padding:8px;color:#cfe
@@ -108,31 +56,29 @@
     .chat-input input{flex:1;padding:10px;border-radius:10px;border:1px solid #345;background:#0a0f14;color:#cfe}
     .chat-input button{padding:10px 12px;border-radius:10px;border:0;background:#29549b;color:#e7f0ff;cursor:pointer}
 
-    /* Panel içi kapat butonu (X) */
+    /* Panel üstü “X” – minimal */
     .chat-close{
-      position:absolute;top:-48px;right:0;width:40px;height:40px;
-      border:1px solid #234;border-radius:10px;background:rgba(8,10,20,.7);
-      color:#9cf;font-weight:800;cursor:pointer
+      position:absolute;top:-32px;right:0;width:28px;height:28px;
+      border:0;background:transparent;color:#cfe;font-size:18px;line-height:28px;cursor:pointer
     }
+    .chat-close:focus{outline:2px solid #234;outline-offset:2px}
 
-    /* Yalnızca kapalıyken görünen küçük balon */
+    /* Küçük balon (yalnızca kapalıyken görünür) */
     .chat-toggle{
       position:fixed;right:clamp(8px,2vw,16px);
       bottom:calc(12px + env(safe-area-inset-bottom));
-      width:44px;height:44px;border-radius:12px;border:1px solid #234;
-      background:rgba(8,10,20,.7);color:#9cf;z-index:31;cursor:pointer;
-      display:none;align-items:center;justify-content:center;font-size:18px
+      width:28px;height:28px;border:0;border-radius:8px;
+      background:transparent;color:#cfe;z-index:31;cursor:pointer;
+      display:none;align-items:center;justify-content:center;font-size:18px;line-height:28px;
     }
-    .chat-toggle.-show{ display:flex; }
+    .chat-toggle.-show{display:flex}
 
-    /* Diğer overlayler */
-    .floating{position:absolute;top:60px;left:50%;transform:translateX(-50%);color:#aff;text-shadow:0 0 8px #0ff;z-index:10;font-weight:700;display:none}
-
+    /* ========= Joystick & Lookpad ========= */
     #joystick{position:absolute;left:14px;bottom:14px;width:120px;height:120px;border-radius:50%;border:1px solid #234;background:rgba(10,14,20,.35);backdrop-filter:blur(3px);z-index:11;touch-action:none}
     #stick{position:absolute;left:50%;top:50%;width:56px;height:56px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(80,180,255,.35);border:1px solid #2a4}
     #lookpad{position:absolute;right:0;bottom:0;width:40vw;height:55vh;z-index:11;touch-action:none}
 
-    /* NFT modal */
+    /* ========= NFT Modal ========= */
     .nft-modal{position:fixed;inset:0;z-index:9998;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
     .nft-card{width:min(920px,92vw);max-height:86vh;overflow:auto;background:rgba(8,10,20,.96);border:1px solid #234;border-radius:16px;padding:14px;color:#d9ecff}
     .nft-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:10px}
@@ -144,17 +90,14 @@
     .nft-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
     .btn{padding:10px 12px;border-radius:10px;border:1px solid #2a4;background:#0a151a;color:#d9ecff;cursor:pointer}
     .btn.-primary{background:#1d8f4a;border-color:#2e9d5d;color:#ecfff2;font-weight:800}
-    .nft-mini{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.35);padding:8px;border-radius:10px}
+    .nft-mini{display:flex;align-items:center;gap:8px;padding:8px;border-radius:10px}
     .nft-mini img{width:40px;height:40px;border-radius:8px;object-fit:cover}
 
-    /* Mobilde genişliği biraz daralt; lookpad’e göre JS ayrıca sığdıracak */
+    /* Mobil – genişliği biraz daralt (JS ayrıca lookpad’e göre ayarlayacak) */
     @media (pointer:coarse){
-      .chat{ width:min(320px,80vw) }
+      .chat{width:min(320px,80vw)}
     }
   </style>
-
-
-
 </head>
 
 <!-- three import map (client.js'ten önce yüklenmeli) -->
@@ -195,12 +138,11 @@
           <img id="chosenNftImg" src="" alt="">
           <div>
             <div id="chosenNftName" style="font-weight:800"></div>
-            <small id="chosenNftStats" style="opacity:.8"></small>
+            <small id="chosenNftStats" style="opacity:.9"></small>
           </div>
         </div>
 
         <input id="nameInput" placeholder="Görünen adın (ör. Yogi)" maxlength="20" />
-
         <button id="playBtn" type="button">Giriş</button>
         <button id="openNftSelect" class="btn" type="button">NFT Seç</button>
       </div>
@@ -216,13 +158,11 @@
       </div>
     </div>
 
-    <!-- Kapalıyken görünen minik balon -->
+    <!-- Chat kapalıyken görünen küçük balon -->
     <button id="chatToggle" class="chat-toggle" aria-label="Sohbeti aç">💬</button>
-
 
     <div id="joystick"><div id="stick"></div></div>
     <div id="lookpad"></div>
-
     <div class="floating" id="toast"></div>
   </div>
 
@@ -241,41 +181,14 @@
     </div>
   </div>
 
-<script>
-  // Yardım toggle
-  const helpBtn = document.getElementById("helpBtn");
-  const helpBox = document.getElementById("helpBox");
-  helpBtn.addEventListener("click", ()=> {
-    helpBox.style.display = helpBox.style.display === "block" ? "none" : "block";
-  });
-
-  // 🗨️ Chat Aç/Kapa — layout’u hiç etkilemeden sadece görünürlüğü değiştirir
-  const chatEl      = document.querySelector('.chat');
-  const chatToggle  = document.getElementById('chatToggle');
-  const isMobileUA  = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-  function setChatOpen(open){
-    if(open){ chatEl.classList.remove('-collapsed'); chatToggle.setAttribute('aria-pressed','true'); }
-    else    { chatEl.classList.add('-collapsed');    chatToggle.setAttribute('aria-pressed','false'); }
-  }
-
-  // Varsayılan: mobilde açık, desktop’ta kapalı
-  setChatOpen(isMobileUA ? true : false);
-
-  chatToggle.addEventListener('click', () => {
-    const open = chatEl.classList.contains('-collapsed');
-    setChatOpen(open);
-  });
-
-  // Mobil klavye açıldığında viewport zıplamasını azalt
-  // (Sahne fixed olmasına rağmen güvence için)
-  window.addEventListener('focusin', (e) => {
-    if(e.target && e.target.id === 'chatText'){
-      window.scrollTo(0,0);
-    }
-  });
-</script>
-
+  <script>
+    // Yardım kutusu toggle
+    const helpBtn = document.getElementById("helpBtn");
+    const helpBox = document.getElementById("helpBox");
+    helpBtn.addEventListener("click", ()=> {
+      helpBox.style.display = helpBox.style.display === "block" ? "none" : "block";
+    });
+  </script>
 
   <!-- === Güvenli NFT akışı (BACKEND üstünden) — client.js'ten ÖNCE === -->
   <script>
@@ -418,7 +331,7 @@
       }
     });
 
-    // Fallback: URL ?wallet= adresinden al (yerel test için)
+    // Fallback: URL ?wallet=
     (async () => {
       const u = new URL(location.href);
       const w = u.searchParams.get('wallet');
@@ -448,15 +361,14 @@
     });
 
     socket.on("connect_error", (err) => {
-      // WebSocket upgrade hatalarını sessize al
       if (String(err?.message || "").toLowerCase().includes("websocket")) return;
       console.warn("socket connect_error", err);
     });
-    // window.socket = socket; // gerekirse globalleştir
   </script>
 
   <script type="module" src="/client.js"></script>
 
+  <!-- ====== TEK Chat Script (diğeri kaldırıldı) ====== -->
   <script>
   (() => {
     const panel  = document.getElementById('chatPanel');
@@ -468,10 +380,10 @@
 
     function openChat(){
       panel.classList.remove('-hidden');
-      toggle.classList.remove('-show');          // kare kutucuk sadece kapalıyken
+      toggle.classList.remove('-show');          // küçük balon sadece kapalıyken
       setTimeout(() => input?.focus(), 0);
       try{ document.exitPointerLock?.() }catch{}
-      fitNextToLookpad();                         // konumu/genei̧şliği güncelle
+      fitNextToLookpad();                         // konumu/genişliğini güncelle
     }
     function closeChat(){
       panel.classList.add('-hidden');
@@ -479,14 +391,14 @@
       try{ window.renderer?.domElement?.requestPointerLock?.() }catch{}
     }
 
-    // Varsayılan: her yerde AÇIK
+    // Varsayılan: AÇIK (web + mobil)
     openChat();
 
     // Butonlar
     closeB.addEventListener('click', closeChat);
     toggle.addEventListener('click', openChat);
 
-    // Kısayollar: ESC kapat, Enter / '/' aç (yazmıyorken), Y toggle
+    // Kısayollar
     document.addEventListener('keydown', (e) => {
       const tag = (document.activeElement?.tagName || '').toLowerCase();
       const typing = tag === 'input' || tag === 'textarea';
@@ -495,29 +407,20 @@
       else if(e.key.toLowerCase() === 'y'){ panel.classList.contains('-hidden') ? openChat() : closeChat(); e.preventDefault(); }
     });
 
-    // Mobilde sağ lookpad alanına çarpmadan YANINA sığdır
+    // Mobilde sağ lookpad'e çarpmadan yanına sığdır
     function fitNextToLookpad(){
       const lp = document.getElementById('lookpad');
       if(!lp) return;
-
-      // lookpad sağ-altta geniş bir alan (40vw). Chat’i onun SOLUNA sığdır.
       const r = lp.getBoundingClientRect();
-      const available = Math.max(220, Math.floor(r.left) - 24);   // sağ alanın soluna kadar boşluk
+      const available = Math.max(220, Math.floor(r.left) - 24); // lookpad'in soluna kadar boşluk
       const targetW   = Math.min(360, available, Math.floor(window.innerWidth * 0.9));
-      panel.style.width = targetW + 'px';
-
-      // Sağ-alta sabit; alt çentiğe göre güvenli boşluk:
+      panel.style.width  = targetW + 'px';
       panel.style.right  = 'clamp(8px,2vw,16px)';
       panel.style.bottom = `calc(12px + env(safe-area-inset-bottom))`;
     }
-
-    // Yeniden hesapla
     ['resize','orientationchange'].forEach(evt => window.addEventListener(evt, fitNextToLookpad));
     setTimeout(fitNextToLookpad, 50);
   })();
   </script>
-
-
-
 </body>
 </html>
