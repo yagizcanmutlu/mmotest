@@ -1043,17 +1043,16 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         unload: true    // uzaklaşınca boşalt
       });
 
-      // === AGORA Binaları (hemen yükle) ===
+      // === AGORA Binaları (lazy yükleme) ===
       {
+        const C = getAnyPadCenter(); // pad merkezi
 
-        spawnNPC('/models/minimarket.glb', {
-          onPad: true,
-          offset: { x: 10, z: 18 },
-          targetHeight: 3.2,          // alçak yapı → yüksekliğe göre ölçekle
-          ry: -Math.PI * 0.08,
+        AGORALazy.register({
           name: 'Mini Market',
-          colliderPadding: 0.25,
-          collision: true
+          x: C.x + 10, z: C.z + 18,
+          url: '/models/minimarket.glb',
+          dist: 36,
+          unload: true
         });
       }
 
