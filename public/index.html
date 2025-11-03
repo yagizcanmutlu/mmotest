@@ -103,7 +103,7 @@
 
   /* 💬 Toggle düğmesi */
   .chat-toggle{
-    position:fixed; left:12px; bottom:calc(12px + 170px);  /* chat kutusunun biraz üstünde */
+    position:fixed; right:12px; left:auto; bottom:calc(12px + 170px);  /* chat kutusunun biraz üstünde */
     width:40px; height:40px; border-radius:10px; border:1px solid #234;
     background:rgba(8,10,20,.6); color:#9cf; z-index:21; cursor:pointer;
     font-weight:800;
@@ -132,8 +132,8 @@
 
   /* 📱 Mobil ayarları: chat varsayılan açık + joystick’e çarpmasın */
   @media (pointer:coarse){
-    .chat{ width:88vw; left:8px; bottom:120px; }       /* joystick’ten yukarıda dursun */
-    .chat-toggle{ left:8px; bottom:calc(120px + 8px); }/* joystick üzerinde */
+    .chat{ right:8px; left:auto; bottom:calc(55vh + 8px); width:88vw; }      /* joystick’ten yukarıda dursun */
+    .chat-toggle{ right:8px; left:auto; bottom:calc(55vh + 8px + 50px); }/* joystick üzerinde */
   }
 </style>
 
