@@ -1043,6 +1043,36 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         unload: true    // uzaklaşınca boşalt
       });
 
+      // === AGORA Binaları (lazy yükleme) ===
+      {
+        const C = getAnyPadCenter(); // pad merkezi
+
+        AGORALazy.register({
+          name: 'Office Tower',
+          x: C.x + 22, z: C.z - 8,
+          url: '/models/office_building.glb',
+          dist: 40,   // 40m yaklaşınca yükle
+          unload: true
+        });
+
+        AGORALazy.register({
+          name: 'Near Block',
+          x: C.x - 24, z: C.z - 12,
+          url: '/models/building_near.glb',
+          dist: 38,
+          unload: true
+        });
+
+        AGORALazy.register({
+          name: 'Mini Market',
+          x: C.x + 10, z: C.z + 18,
+          url: '/models/minimarket.glb',
+          dist: 36,
+          unload: true
+        });
+      }
+
+
 
       // Çarpışma halkası aç/kapat:
       setCollisionEnabledFor('Neon Skyscraper', false); // devre dışı
@@ -1292,7 +1322,7 @@ document.addEventListener('keydown', (e) => {
   }
 }, { passive:false });
 
-// === Minimal Admin Panel (FPS dostu) ===
+// === Minimal Admin Panel (FPS dostu) ===/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 (function setupAdmin(){
   const rootEl = document.getElementById('root');
   if (!rootEl) return;
