@@ -26,6 +26,13 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
 
+    // 🔰 Global state (erken deklarasyon)
+  const local = {
+    id:null, name:null, yaw:0, parts:null, tag:null,
+    points:0, visited:{}, x:0, z:0, gender:'unknown'
+  };
+
+
     // Dünya sınırı (pad merkezine göre)
   let worldCenter = new THREE.Vector3(0, 0, 0);
   const WORLD_BOUNDS = {
@@ -89,21 +96,21 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     const wallet = pl.wallet || null;
     const nft    = pl.nft || null;
 
-    // 1) yerel state
     local.gender = gender;
-    if (name) updateNameTag(local, name);
+    if (name) {
+      if (local?.parts?.group) updateNameTag(local, name);
+      else local._pendingName = name; // ⬅ etiket beklesin
+    }
 
-    // 3) server sync
     socket.emit("profile:update", { name, gender, wallet, nft });
     socket.emit("join",           { name, gender, wallet, nft });
 
-    // 4) UI
     if (cta) cta.style.display = "none";
     try { renderer.domElement.requestPointerLock(); } catch(e){}
 
-    // 5) seçilen NFT’yi cache'le
     window.__AGORA_SELECTED_NFT__ = nft || null;
   }
+
 
 
   // 1) index.html'den gelen event ile başlat
@@ -241,10 +248,12 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const MAX_COLLIDER_RADIUS = 12;
   let colliderDebug = null;
 
+  const zoneDebug = new THREE.Group(); // sahneye ekleme YOK
+
+
     // ======= AŞAMA: MERDİVEN/DUVAR SİSTEMİ =======
   const AABB_WALLS = [];   // {name,minX,maxX,minZ,maxZ,yMin,yMax}
   const HEIGHT_ZONES = []; // {name,minX,maxX,minZ,maxZ,y0,y1,axis} axis: 'x' | 'z' | null
-  const zoneDebug = new THREE.Group(); scene.add(zoneDebug);
 
   function addWallRect(name, x1, z1, x2, z2, yMin=-1, yMax=3){
     const minX = Math.min(x1,x2), maxX = Math.max(x1,x2);
@@ -346,6 +355,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   root.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
+  scene.add(zoneDebug);
+  
   scene.fog = new THREE.Fog(0x090a14, 20, 120);
   colliderDebug = new THREE.Group();
   scene.add(colliderDebug);
@@ -779,6 +790,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   // ---- Oyuncu: Stylized mini astronot
   function buildStylizedChar(primaryColor = 0xffe4c4, accentColor = 0xffffff, opts={}){
+    if (local._pendingName) { updateNameTag(local, local._pendingName); delete local._pendingName; }
     const scale = opts.scale ?? 0.22;
     const legH = opts.legH ?? 0.7;
     const legR = opts.legR ?? 0.19;
@@ -826,7 +838,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return { group: grp, torso, head, armL, armR, legL, legR: legRMesh };
   }
 
-  const local = { id:null, name:null, yaw:0, parts:null, tag:null, points:0, visited:{}, x:0, z:0 };
+
   {
     const parts = buildStylizedChar(0xffe4c4);
     local.parts = parts; scene.add(parts.group);
