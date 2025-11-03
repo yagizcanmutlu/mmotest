@@ -1043,32 +1043,37 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
         unload: true    // uzaklaşınca boşalt
       });
 
-      // === AGORA Binaları (lazy yükleme) ===
+      // === AGORA Binaları (hemen yükle) ===
       {
-        const C = getAnyPadCenter(); // pad merkezi
-
-        AGORALazy.register({
+        // Pad merkezine göre yerleştiriyoruz (onPad:true + offset)
+        spawnNPC('/models/office_building.glb', {
+          onPad: true,
+          offset: { x: 22, z: -8 },   // pad'in 22m doğusu, 8m kuzeyi
+          targetDiag: 16,             // kuleyi sahneyle orantılı büyüt
+          ry: Math.PI * 0.05,
           name: 'Office Tower',
-          x: C.x + 22, z: C.z - 8,
-          url: '/models/office_building.glb',
-          dist: 40,   // 40m yaklaşınca yükle
-          unload: true
+          colliderPadding: 0.35,      // çarpışma halkası "bir tık" geniş
+          collision: true
         });
 
-        AGORALazy.register({
+        spawnNPC('/models/building_near.glb', {
+          onPad: true,
+          offset: { x: -24, z: -12 },
+          targetDiag: 12,             // orta boy blok
+          ry: Math.PI * 0.15,
           name: 'Near Block',
-          x: C.x - 24, z: C.z - 12,
-          url: '/models/building_near.glb',
-          dist: 38,
-          unload: true
+          colliderPadding: 0.30,
+          collision: true
         });
 
-        AGORALazy.register({
+        spawnNPC('/models/minimarket.glb', {
+          onPad: true,
+          offset: { x: 10, z: 18 },
+          targetHeight: 3.2,          // alçak yapı → yüksekliğe göre ölçekle
+          ry: -Math.PI * 0.08,
           name: 'Mini Market',
-          x: C.x + 10, z: C.z + 18,
-          url: '/models/minimarket.glb',
-          dist: 36,
-          unload: true
+          colliderPadding: 0.25,
+          collision: true
         });
       }
 
