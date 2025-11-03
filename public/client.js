@@ -1045,26 +1045,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
       // === AGORA Binaları (hemen yükle) ===
       {
-        // Pad merkezine göre yerleştiriyoruz (onPad:true + offset)
-        spawnNPC('/models/office_building.glb', {
-          onPad: true,
-          offset: { x: 22, z: -8 },   // pad'in 22m doğusu, 8m kuzeyi
-          targetDiag: 16,             // kuleyi sahneyle orantılı büyüt
-          ry: Math.PI * 0.05,
-          name: 'Office Tower',
-          colliderPadding: 0.35,      // çarpışma halkası "bir tık" geniş
-          collision: true
-        });
-
-        spawnNPC('/models/building_near.glb', {
-          onPad: true,
-          offset: { x: -24, z: -12 },
-          targetDiag: 12,             // orta boy blok
-          ry: Math.PI * 0.15,
-          name: 'Near Block',
-          colliderPadding: 0.30,
-          collision: true
-        });
 
         spawnNPC('/models/minimarket.glb', {
           onPad: true,
