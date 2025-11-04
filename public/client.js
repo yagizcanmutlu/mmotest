@@ -330,6 +330,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   // Kullanışlı: Pozisyon logger (ALT+L)
 // ===== AGORA: debug & hotkeys (single block) =====
 
+// ==== AGORA hotkeys (çakışmasız) ====
 // Yazarken kısayol çalışmasın
 const __isTyping = () => {
   const el = document.activeElement;
@@ -337,45 +338,13 @@ const __isTyping = () => {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable);
 };
 
-/* Pozisyon logger — ALT+L */
-window.logPos = () => {
-  const p = (local?.parts?.group?.position) || {x:0,y:0,z:0};
-  console.log(`[pos] x=${p.x.toFixed(2)} z=${p.z.toFixed(2)} y=${p.y.toFixed(2)}`);
-};
-window.addEventListener('keydown', (e) => {
-  if (e.altKey && e.key && e.key.toLowerCase() === 'l' && !__isTyping()) {
-    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-    window.logPos();
-  }
-}, { capture:true, passive:false });
-
-/* Admin helpers */
-window.Admin = (window.Admin || {});
-window.Admin.toggleZones = () => {
-  const g = (typeof zoneDebug !== 'undefined' && zoneDebug) ? zoneDebug
-        : (typeof colliderDebug !== 'undefined' && colliderDebug) ? colliderDebug
-        : null;
-  if (g) {
-    g.visible = !g.visible;
-    if (typeof worldBoundaryRing !== 'undefined' && worldBoundaryRing) {
-      worldBoundaryRing.visible = g.visible;
-    }
-    console.log('[Zones] visible:', g.visible);
-  } else {
-    console.warn('[Zones] no debug group (zoneDebug/colliderDebug).');
-  }
-};
-
-// İstediğin tuşları gerekirse buradan değiştir
-const KEY_TOGGLE_BOUNDARY = (typeof window.KEY_TOGGLE_BOUNDARY === 'string' ? window.KEY_TOGGLE_BOUNDARY : 'F9');
-const KEY_TOGGLE_ADMIN    = (typeof window.KEY_TOGGLE_ADMIN    === 'string' ? window.KEY_TOGGLE_ADMIN    : 'F10');
-
-// F9/F10 – OS/tarayıcı davranışını yut
 const __onKeyDown = (e) => {
   if (__isTyping()) return;
 
-  const hitBoundary = (e.key === KEY_TOGGLE_BOUNDARY || e.code === KEY_TOGGLE_BOUNDARY);
-  const hitAdmin    = (e.key === KEY_TOGGLE_ADMIN    || e.code === KEY_TOGGLE_ADMIN);
+  // Çakışmasız kombineler
+  const hitBoundary = (e.ctrlKey && e.shiftKey && e.code === 'KeyB');            // Ctrl+Shift+B
+  const hitAdmin    = (e.code === 'Backquote') ||                                // `
+                      (e.ctrlKey && e.shiftKey && e.code === 'KeyP');            // Ctrl+Shift+P
 
   if (!hitBoundary && !hitAdmin) return;
 
@@ -385,23 +354,25 @@ const __onKeyDown = (e) => {
 
   if (hitBoundary) {
     if (typeof toggleBoundaryDebug === 'function') toggleBoundaryDebug();
-    else if (window.Admin && typeof window.Admin.toggleZones === 'function') window.Admin.toggleZones();
+    else if (window.Admin?.toggleZones) window.Admin.toggleZones();
   } else if (hitAdmin) {
-    if (typeof toggleAdminPanel === 'function') toggleAdminPanel();
-    else console.log('[Admin] toggleAdminPanel() yok.');
+    if (window.AGORA_ADMIN?.toggle) window.AGORA_ADMIN.toggle();
+    else console.log('[Admin] AGORA_ADMIN.toggle() bulunamadı');
   }
 };
+
 window.addEventListener('keydown', __onKeyDown, { capture:true, passive:false });
 
-// Bazı sistemlerde keypress/keyup da tetiklenebiliyor; garanti olsun
-const __swallow = (e) => {
-  if (e.key === KEY_TOGGLE_BOUNDARY || e.code === KEY_TOGGLE_BOUNDARY ||
-      e.key === KEY_TOGGLE_ADMIN    || e.code === KEY_TOGGLE_ADMIN) {
-    e.preventDefault(); e.stopPropagation();
+// Eski F9/F10 dinleyicilerini ve "toggleAdminPanel()" çağrısını kaldırdık.
+// B tuşu ile ring aç/kapa hâlâ dursun:
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase?.() === 'b' && !__isTyping()){
+    SHOW_WORLD_RING = !SHOW_WORLD_RING;
+    ensureBoundaryRing();
+    e.preventDefault();
   }
-};
-window.addEventListener('keypress', __swallow, { capture:true, passive:false });
-window.addEventListener('keyup',    __swallow, { capture:true, passive:false });
+}, { passive:false });
+
 
 
 
