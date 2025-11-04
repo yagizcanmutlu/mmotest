@@ -26,6 +26,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
 
+    // ==== Key mappings (kolayca değiştir) ====
+  const KEY_TOGGLE_BOUNDARY = 'F9';   // 'KeyB' veya 'Backquote' da yapabilirsin
+  const KEY_TOGGLE_ADMIN    = 'F10';  // admin panel tuşu
+
+
     // 🔰 Global state (erken deklarasyon)
   const local = {
     id:null, name:null, yaw:0, parts:null, tag:null,
@@ -249,6 +254,14 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   let colliderDebug = null;
 
   const zoneDebug = new THREE.Group(); // sahneye ekleme YOK
+  zoneDebug.visible = false; // başlangıçta kapalı
+
+  function toggleBoundaryDebug() {
+    if (!zoneDebug) return;
+    zoneDebug.visible = !zoneDebug.visible;
+    showToast(zoneDebug.visible ? 'Sınır çizgileri: AÇIK' : 'Sınır çizgileri: KAPALI');
+  }
+
 
 
     // ======= AŞAMA: MERDİVEN/DUVAR SİSTEMİ =======
@@ -326,7 +339,23 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   document.addEventListener('keydown', (e)=>{ if(e.altKey && e.key.toLowerCase()==='l') window.logPos(); });
   window.Admin = (window.Admin||{});
   window.Admin.toggleZones = () => { zoneDebug.visible = !zoneDebug.visible; console.log('Zones visible:', zoneDebug.visible); };
-  document.addEventListener('keydown', (e)=>{ if(e.altKey && e.key.toLowerCase()==='z') window.Admin.toggleZones(); });
+    // Alt+Z yerine: F9 = sınır halkaları, F10 = admin panel (varsa)
+  document.addEventListener('keydown', (e) => {
+    const tag = (document.activeElement?.tagName || '').toLowerCase();
+    const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.isComposing;
+
+    if (typing) return; // yazarken tetikleme
+
+    if (e.code === (typeof KEY_TOGGLE_BOUNDARY === 'string' ? KEY_TOGGLE_BOUNDARY : 'F9')) {
+      if (typeof toggleBoundaryDebug === 'function') toggleBoundaryDebug();
+      else if (window.Admin?.toggleZones) window.Admin.toggleZones(); // eski fallback
+      e.preventDefault();
+    } else if (e.code === (typeof KEY_TOGGLE_ADMIN === 'string' ? KEY_TOGGLE_ADMIN : 'F10')) {
+      if (typeof toggleAdminPanel === 'function') toggleAdminPanel();
+      e.preventDefault();
+    }
+  });
+
 
 
   // === GROUND CONFIG ===
@@ -356,7 +385,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   const scene = new THREE.Scene();
   scene.add(zoneDebug);
-  
+
   scene.fog = new THREE.Fog(0x090a14, 20, 120);
   colliderDebug = new THREE.Group();
   scene.add(colliderDebug);
