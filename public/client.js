@@ -327,53 +327,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return false;
   }
 
-  // Kullanışlı: Pozisyon logger (ALT+L)
-// ===== AGORA: debug & hotkeys (single block) =====
-
-/* === AGORA HOTKEYS — Çakışmasız === */
-(() => {
-  const isTyping = () => {
-    const el = document.activeElement;
-    const tag = (el && el.tagName || '').toLowerCase();
-    return tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable);
-  };
-
-  // Pozisyon logger (ALT+L)
-  window.logPos = function(){
-    const p = (local?.parts?.group?.position) || {x:0,y:0,z:0};
-    console.log(`[pos] x=${p.x.toFixed(2)} z=${p.z.toFixed(2)} y=${p.y.toFixed(2)}`);
-  };
-
-  // Güvenli kısayollar:
-  //  Alt+B  : sınır/zone görünümü
-  //  ` (backquote): admin panel
-  //  Alt+L  : pozisyon log
-  window.addEventListener('keydown', (e) => {
-    if (isTyping()) return;
-
-    // Pozisyon
-    if (e.code === 'KeyL' && e.altKey) {
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      window.logPos();
-      return;
-    }
-
-    // Sınır/zone toggle (Alt+B)
-    if (e.code === 'KeyB' && e.altKey) {
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      if (typeof toggleBoundaryDebug === 'function') toggleBoundaryDebug();
-      else if (window.Admin?.toggleZones) window.Admin.toggleZones();
-      return;
-    }
-
-    // Admin panel (` tuşu)
-    if (e.code === 'Backquote') {
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      window.AGORA_ADMIN?.toggle?.();
-      return;
-    }
-  }, { capture:true, passive:false });
-})();
 
 
 
@@ -1485,18 +1438,93 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     try { socket?.close(); } catch(e) {}
   });
 
-  // Hızlı kısayollar: B = sınır ring aç/kapa, F10/` = admin panel aç/kapa
-document.addEventListener('keydown', (e) => {
-  if (e.key.toLowerCase?.() === 'b' && !chatFocus){
-    SHOW_WORLD_RING = !SHOW_WORLD_RING;
-    ensureBoundaryRing();
-    e.preventDefault();
-  }
-  if ((e.key === 'F10' || e.key === '`') && !e.repeat){
-    window.AGORA_ADMIN?.toggle();
-    e.preventDefault();
-  }
-}, { passive:false });
+    // Kullanışlı: Pozisyon logger (ALT+L)
+// ===== AGORA: debug & hotkeys (single block) =====
+
+/* === AGORA HOTKEYS — Çakışmasız === */
+(() => {
+  const isTyping = () => {
+    const el = document.activeElement;
+    const tag = (el && el.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable);
+  };
+
+  // Pozisyon logger (ALT+L)
+  window.logPos = function(){
+    const p = (local?.parts?.group?.position) || {x:0,y:0,z:0};
+    console.log(`[pos] x=${p.x.toFixed(2)} z=${p.z.toFixed(2)} y=${p.y.toFixed(2)}`);
+  };
+
+  // Güvenli kısayollar:
+  //  Alt+B  : sınır/zone görünümü
+  //  ` (backquote): admin panel
+  //  Alt+L  : pozisyon log
+  window.addEventListener('keydown', (e) => {
+    if (isTyping()) return;
+
+    // Pozisyon
+    if (e.code === 'KeyL' && e.altKey) {
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      window.logPos();
+      return;
+    }
+
+    // Sınır/zone toggle (Alt+B)
+    if (e.code === 'KeyB' && e.altKey) {
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      if (typeof toggleBoundaryDebug === 'function') toggleBoundaryDebug();
+      else if (window.Admin?.toggleZones) window.Admin.toggleZones();
+      return;
+    }
+
+    // Admin panel (` tuşu)
+    if (e.code === 'Backquote') {
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      window.AGORA_ADMIN?.toggle?.();
+      return;
+    }
+  }, { capture:true, passive:false });
+})();
+
+/* === Viewport/Resize Stabilizer === */
+(() => {
+  const rootEl = document.getElementById('root');
+  if (!rootEl) return;
+
+  // Başlangıçta mevcut iç yükseklik ile kilitle
+  let lockedH = window.innerHeight;
+  rootEl.style.height = lockedH + 'px';
+
+  // Küçük dalgalanmaları yok say (örn. yer imi çubuğu aç/kapa)
+  let lastApplied = lockedH;
+  let resizeTimer = 0;
+
+  const MIN_DELTA_TO_ACCEPT = 32;   // px: bundan küçük değişimleri görmezden gel
+  const APPLY_DELAY_MS       = 180; // gerçek resize'larda kısa gecikme ile uygula
+
+  window.addEventListener('resize', () => {
+    const ih = window.innerHeight;
+    const delta = Math.abs(ih - lastApplied);
+
+    // Ufak dalgalanma → yoksay
+    if (delta < MIN_DELTA_TO_ACCEPT) return;
+
+    // Gerçek boyut değişimi → kısa gecikme ile uygula
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      lockedH = window.innerHeight;
+      lastApplied = lockedH;
+      rootEl.style.height = lockedH + 'px';
+      // üç.js tarafını da güncelle
+      try {
+        renderer.setSize(rootEl.clientWidth, lockedH);
+        camera.aspect = rootEl.clientWidth / lockedH;
+        camera.updateProjectionMatrix();
+      } catch {}
+    }, APPLY_DELAY_MS);
+  }, { passive:true });
+})();
+
 
 // === Minimal Admin Panel (FPS dostu) ===/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 (function setupAdmin(){
