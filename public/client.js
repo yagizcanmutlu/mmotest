@@ -32,6 +32,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     points:0, visited:{}, x:0, z:0, gender:'unknown'
   };
 
+  // Seçilen NFT'den avatar GLB çözmek için state
+  let currentAvatarUrl = null;
+  window.__AGORA_SELECTED_NFT__ = null;
+
+
   // Dünya sınırı (pad merkezine göre)
   let worldCenter = new THREE.Vector3(0, 0, 0);
   const WORLD_BOUNDS = {
@@ -100,6 +105,9 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     try { renderer.domElement.requestPointerLock(); } catch(e){}
 
     window.__AGORA_SELECTED_NFT__ = nft || null;
+    // NFT seçimine göre avatarı hemen dene
+    maybeLoadAvatarFromNFT(window.__AGORA_SELECTED_NFT__);
+
   }
 
   // 1) index.html'den gelen event ile başlat
@@ -187,10 +195,14 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     scene.add(root);
     usingGLBAvatar = true;
   }
+
+  
   function swapLocalAvatarFromGLB(url) {
     if (!gltfLoader) return;
+    if (currentAvatarUrl && currentAvatarUrl === url && avatarGLB) return; // zaten bu var
     gltfLoader.load(url, (gltf) => {
       avatarGLB && scene.remove(avatarGLB);
+      currentAvatarUrl = url; // ⬅ başarıyla yüklenince set et
       avatarGLB = gltf.scene;
       const ALIOBA_TARGET_HEIGHT = 0.30;
       installAvatarRoot(avatarGLB, ALIOBA_TARGET_HEIGHT);
@@ -445,6 +457,52 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     console.warn('[Agora] GLTFLoader init başarısız. GLB kapalı:', e);
     gltfLoader = null;
   }
+
+    // --- NFT → Avatar GLB eşlemesi ve yükleyici ---
+  function resolveAvatarUrlFromNFT(nft) {
+    // nft; string (ad, url) ya da { modelUrl, attributes: { modelUrl } } olabilir
+    if (!nft) return '/models/alioba/Alioba_Merged_Animations.glb';
+
+    if (typeof nft === 'string') {
+      const s = nft.toLowerCase();
+      if (s.startsWith('http') && (s.endsWith('.glb') || s.endsWith('.gltf'))) return nft;
+      if (s.endsWith('.glb') || s.endsWith('.gltf')) return nft; // /assets/.../x.glb gibi
+      if (s.includes('alioba')) return '/models/alioba/Alioba_Merged_Animations.glb';
+      // başka bir isim geldiyse şimdilik varsayılan
+      return '/models/alioba/Alioba_Merged_Animations.glb';
+    }
+
+    if (nft && typeof nft === 'object') {
+      if (typeof nft.modelUrl === 'string') return nft.modelUrl;
+      if (nft.attributes && typeof nft.attributes.modelUrl === 'string') return nft.attributes.modelUrl;
+    }
+
+    return '/models/alioba/Alioba_Merged_Animations.glb';
+  }
+
+  function maybeLoadAvatarFromNFT(nft) {
+    if (!gltfLoader) {
+      console.warn('[Avatar] GLTFLoader yok, GLB avatar yüklenemiyor; stylized ile devam.');
+      return;
+    }
+    const url = resolveAvatarUrlFromNFT(nft);
+    if (!url) return;
+    if (currentAvatarUrl === url && avatarGLB) {
+      // Aynı modeli zaten kullanıyoruz
+      return;
+    }
+    currentAvatarUrl = url;
+    console.log('[Avatar] NFT’ye göre GLB yükleniyor:', url);
+    swapLocalAvatarFromGLB(url);
+  }
+
+  // Host sayfa NFT seçimi değiştirirse
+  window.addEventListener('nft:selected', (e) => {
+    const nft = e?.detail || null;
+    window.__AGORA_SELECTED_NFT__ = nft;
+    maybeLoadAvatarFromNFT(nft);
+  });
+  
 
   // ---- Dinamik Yükleme Sistemi (Yakınlaşınca yükle) ----
   const lazyPacks = [];
@@ -1110,7 +1168,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       setCollisionEnabledFor('Neon Skyscraper', false);
       setCollisionEnabledFor('Neon Skyscraper', true, 0.40);
 
-      swapLocalAvatarFromGLB('/models/alioba/Alioba_Merged_Animations.glb');
+      maybeLoadAvatarFromNFT(window.__AGORA_SELECTED_NFT__ || 'alioba');
     }
   });
 
