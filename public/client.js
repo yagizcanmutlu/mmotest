@@ -1614,7 +1614,6 @@ document.addEventListener('keydown', (e) => {
     show(){ panel.style.display = 'block'; },
     hide(){ panel.style.display = 'none'; }
   };
-})();
+})(); // <= setupAdmin bitti
 
-
-})();
+})(); // <= client.js ana IIFE bitti
