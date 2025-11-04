@@ -26,22 +26,20 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   const stick    = document.getElementById("stick");
   const lookpad  = document.getElementById("lookpad");
 
-
-    // 🔰 Global state (erken deklarasyon)
+  // 🔰 Global state (erken deklarasyon)
   const local = {
     id:null, name:null, yaw:0, parts:null, tag:null,
     points:0, visited:{}, x:0, z:0, gender:'unknown'
   };
 
-
-    // Dünya sınırı (pad merkezine göre)
+  // Dünya sınırı (pad merkezine göre)
   let worldCenter = new THREE.Vector3(0, 0, 0);
   const WORLD_BOUNDS = {
-    radius: 160,   // izin verilen yarıçap (metre)
-    soft: 20       // kenarda “yumuşak bölge” (uayrı uyarı/fade için)
+    radius: 160,  // izin verilen yarıçap (metre)
+    soft: 20      // kenarda “yumuşak bölge”
   };
 
-    // === Dünya Sınırı Görseli (Kırmızı Ring) ===
+  // === Dünya Sınırı Görseli (Kırmızı Ring) ===
   let boundaryRing = null;
   let SHOW_WORLD_RING = true;
 
@@ -50,7 +48,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       if (boundaryRing) boundaryRing.visible = false;
       return;
     }
-    // yoksa oluştur, varsa güncelle
     if (!boundaryRing){
       const geo = new THREE.RingGeometry(WORLD_BOUNDS.radius - 0.12, WORLD_BOUNDS.radius + 0.12, 128);
       const mat = new THREE.MeshBasicMaterial({
@@ -69,26 +66,19 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
   }
 
-
-  // Kenarda oyuncuyu içeri çeken basit kelepçe (clamp).
-  // Pozisyonu içeri “sınır çemberine” projeler ve 1..0 arası bir yavaşlatma katsayısı döner.
+  // Kenarda oyuncuyu içeri çeken clamp
   function enforceWorldBounds(pos){
     const dx = pos.x - worldCenter.x;
     const dz = pos.z - worldCenter.z;
     const d  = Math.hypot(dx, dz);
     const R  = WORLD_BOUNDS.radius;
     if (d <= R) return 1;
-
-    // Dışarı taşmış: konumu sınır çemberinin üzerine al
     const k = Math.max(0.0001, R / d);
     pos.x = worldCenter.x + dx * k;
     pos.z = worldCenter.z + dz * k;
-
-    // Kenar bölgesindeki yavaşlatma (istersen hız ölçeği olarak da kullanabilirsin)
     const over = d - R;
     return Math.max(0, 1 - over / Math.max(1, WORLD_BOUNDS.soft));
   }
-
 
   // === CİNSİYET KALDIRILDI — yalnızca isim, wallet ve NFT ile giriş ===
   function startGameFromPayload(pl = {}) {
@@ -112,8 +102,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     window.__AGORA_SELECTED_NFT__ = nft || null;
   }
 
-
-
   // 1) index.html'den gelen event ile başlat
   window.addEventListener('agoraInit', (e) => {
     const pl = e?.detail || {};
@@ -121,33 +109,28 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     startGameFromPayload(pl);
   });
 
-  // 2) Fallback: Her ihtimale karşı, event gelmezse "Giriş" click'i lokal payload kurup başlatsın
+  // 2) Fallback: Event gelmezse butonla başlat
   if (playBtn) playBtn.addEventListener('click', () => {
-    // Eğer index.html zaten agoraInit yolladıysa, burada tekrar başlatma.
     if (window.agoraInjectedPayload) return;
-
     const desiredName = (nameInput?.value || '').trim().slice(0, 20) || 'Player';
-    // Formda gender kaldırıldıysa 'unknown' ya da 'male' ver; varsa radio’dan oku:
     const genderInput = document.querySelector('input[name="gender"]:checked');
     const gender = (genderInput?.value) || 'unknown';
-
     const pl = {
       playerName: desiredName,
       gender,
       wallet: window.walletFromHost || null,
-      nft: window.selectedNFT || null   // index.html bu değişkenleri set ediyorsa
+      nft: window.selectedNFT || null
     };
-
     window.agoraInjectedPayload = pl;
     console.log('[fallback] payload:', pl);
     startGameFromPayload(pl);
   });
 
-    // === Alioba avatar (tek GLB, çoklu klip) entegrasyonu ===
-  let avatarGLB = null;         // sahnedeki gerçek GLB kökü
-  let mixer = null;             // AnimationMixer
-  let actions = {};             // { walk, run, dance, clap, idle, ... }
-  let currentAction = null;     // aktif action
+  // === Alioba avatar (tek GLB, çoklu klip) ===
+  let avatarGLB = null;
+  let mixer = null;
+  let actions = {};
+  let currentAction = null;
   let currentActionName = null;
   let usingGLBAvatar = false;
 
@@ -161,11 +144,9 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     if (s.includes('clap'))                       return 'clap';
     return name.replace(/\s+/g,'_').toLowerCase();
   }
-
   function buildActionsFromClips(root, clips=[]) {
     mixer = new THREE.AnimationMixer(root);
     actions = {}; currentAction = null; currentActionName = null;
-
     clips.forEach((clip) => {
       const name = normClipName(clip.name || '');
       const act  = mixer.clipAction(clip);
@@ -173,21 +154,17 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       act.loop = THREE.LoopRepeat;
       actions[name] = act;
     });
-
-    // Idle yoksa, yürüyüşü düşük hızda "idle" gibi kullan
     if (!actions.idle && actions.walk) {
       actions.idle = actions.walk;
       actions.idle.timeScale = 0.35;
     }
   }
-
   function playAction(name, fade=0.18, speed=1.0) {
     const next = actions[name];
     if (!next) return;
     next.enabled = true;
     next.timeScale = speed;
     next.reset();
-
     if (currentAction && currentAction !== next) {
       currentAction.crossFadeTo(next, fade, false);
       next.play();
@@ -197,9 +174,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     currentAction = next;
     currentActionName = name;
   }
-
   function installAvatarRoot(root, targetHeight=1.75) {
-    // Ölçek/pivot düzelt
     root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }});
     const bb = new THREE.Box3().setFromObject(root);
     const size = bb.getSize(new THREE.Vector3());
@@ -207,30 +182,19 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     root.scale.setScalar(s);
     const bb2 = new THREE.Box3().setFromObject(root);
     root.position.y += -bb2.min.y + 0.02;
-
-    // Eski stylized karakteri kaldır ve local.parts.group = root olacak şekilde devret
     if (local?.parts?.group) scene.remove(local.parts.group);
-
-    // Oyuncu objesi olarak root'u kullan
     local.parts = { group: root };
     scene.add(root);
     usingGLBAvatar = true;
   }
-
   function swapLocalAvatarFromGLB(url) {
     if (!gltfLoader) return;
     gltfLoader.load(url, (gltf) => {
-      avatarGLB && scene.remove(avatarGLB);   // önceki varsa kaldır
+      avatarGLB && scene.remove(avatarGLB);
       avatarGLB = gltf.scene;
-
-      // Hedef boyu m cinsinden ver (1.30–1.45 iyi aralık)
       const ALIOBA_TARGET_HEIGHT = 0.30;
       installAvatarRoot(avatarGLB, ALIOBA_TARGET_HEIGHT);
-
       buildActionsFromClips(avatarGLB, gltf.animations || []);
-
-
-      // başlangıç animasyonu
       if (actions.idle) playAction('idle', 0.12, 1.0);
       else if (actions.walk) playAction('walk', 0.12, 0.6);
     }, undefined, (err) => {
@@ -238,29 +202,31 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     });
   }
 
-
   // === Registry & Collisions ===
-  const npcRegistry = new Map();             // key -> THREE.Group (root)
-  const colliders  = [];                     // { key, root, r, padding }
+  const npcRegistry = new Map();     // key -> THREE.Group (root)
+  const colliders  = [];             // { key, root, r, padding }
   const PLAYER_RADIUS = 0.45;
   let COLLISION_ENABLED = true;
 
-  const DEBUG_COLLIDERS = true;              // görünmez duvar teşhisi için
+  const DEBUG_COLLIDERS = true;
   const MAX_COLLIDER_RADIUS = 12;
   let colliderDebug = null;
 
-  const zoneDebug = new THREE.Group(); // sahneye ekleme YOK
-  zoneDebug.visible = false; // başlangıçta kapalı
+  // --- Zone Debug Containers (master + alt gruplar)
+  const zoneDebug = new THREE.Group();
+  zoneDebug.visible = false;
+  const wallsDebug   = new THREE.Group();  // sadece duvar çizgileri
+  const heightsDebug = new THREE.Group();  // merdiven / yükseklik bölgeleri
+  zoneDebug.add(wallsDebug, heightsDebug);
 
   function toggleBoundaryDebug() {
     if (!zoneDebug) return;
     zoneDebug.visible = !zoneDebug.visible;
-    showToast(zoneDebug.visible ? 'Sınır çizgileri: AÇIK' : 'Sınır çizgileri: KAPALI');
+    showToast(zoneDebug.visible ? 'Bölge çizimleri: AÇIK' : 'Bölge çizimleri: KAPALI');
+    const z = document.getElementById('admZones');  if (z) z.checked = zoneDebug.visible;
   }
 
-
-
-    // ======= AŞAMA: MERDİVEN/DUVAR SİSTEMİ =======
+  // ======= AŞAMA: MERDİVEN/DUVAR SİSTEMİ =======
   const AABB_WALLS = [];   // {name,minX,maxX,minZ,maxZ,yMin,yMax}
   const HEIGHT_ZONES = []; // {name,minX,maxX,minZ,maxZ,y0,y1,axis} axis: 'x' | 'z' | null
 
@@ -268,16 +234,18 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     const minX = Math.min(x1,x2), maxX = Math.max(x1,x2);
     const minZ = Math.min(z1,z2), maxZ = Math.max(z1,z2);
     AABB_WALLS.push({ name, minX, maxX, minZ, maxZ, yMin, yMax });
-    // debug çizgisi
     if (DEBUG_COLLIDERS){
-      const g = new THREE.BufferGeometry().setFromPoints([
+      const pts = [
         new THREE.Vector3(minX,0.05,minZ), new THREE.Vector3(maxX,0.05,minZ),
         new THREE.Vector3(maxX,0.05,minZ), new THREE.Vector3(maxX,0.05,maxZ),
         new THREE.Vector3(maxX,0.05,maxZ), new THREE.Vector3(minX,0.05,maxZ),
         new THREE.Vector3(minX,0.05,maxZ), new THREE.Vector3(minX,0.05,minZ),
-      ]);
-      const m = new THREE.LineBasicMaterial({ color: 0xff3a66, transparent:true, opacity:0.8 });
-      zoneDebug.add(new THREE.LineSegments(g, m));
+      ];
+      const g = new THREE.BufferGeometry().setFromPoints(pts);
+      const m = new THREE.LineBasicMaterial({ color: 0xff3a66, transparent:true, opacity:0.9 });
+      const line = new THREE.LineSegments(g, m);
+      line.userData.debugType = 'wall';
+      wallsDebug.add(line);
     }
   }
 
@@ -285,28 +253,32 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     const minX = Math.min(x1,x2), maxX = Math.max(x1,x2);
     const minZ = Math.min(z1,z2), maxZ = Math.max(z1,z2);
     HEIGHT_ZONES.push({ name, minX, maxX, minZ, maxZ, y0, y1, axis });
-    // debug dolgusu
     if (DEBUG_COLLIDERS){
       const geo = new THREE.PlaneGeometry(maxX-minX, maxZ-minZ);
       const mat = new THREE.MeshBasicMaterial({ color:0x33ffaa, transparent:true, opacity:0.18, side:THREE.DoubleSide });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.rotation.x = -Math.PI/2;
       mesh.position.set((minX+maxX)/2, 0.02, (minZ+maxZ)/2);
-      zoneDebug.add(mesh);
+      mesh.userData.debugType = 'height';
+      // küçük bir etiket (y0→y1)
+      try {
+        const lbl = makeNameSprite(`${name}  y:${y0.toFixed(2)}→${y1.toFixed(2)}`, "#bff");
+        lbl.scale.multiplyScalar(0.6);
+        lbl.position.set(0, 0.02, 0);
+        mesh.add(lbl);
+      } catch{}
+      heightsDebug.add(mesh);
     }
   }
 
   function insideRect(x,z, r){
     return (x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ);
   }
-
-  // Yükseklik hedefi (merdiven/ramp/saha)
   function targetYAt(x,z){
     let bestY = 0;
     for (const h of HEIGHT_ZONES){
       if (!insideRect(x,z,h)) continue;
       if (!h.axis){ bestY = Math.max(bestY, h.y1); continue; }
-      // eğim: dikdörtgen boyunca 0→1
       if (h.axis === 'z'){
         const t = (z - h.minZ) / Math.max(1e-6, (h.maxZ - h.minZ));
         bestY = Math.max(bestY, h.y0 + t*(h.y1 - h.y0));
@@ -317,8 +289,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
     return bestY;
   }
-
-  // Dikdörtgen duvar çarpışması (XZ)
   function collidesRectAt(nx, nz, py){
     for (const r of AABB_WALLS){
       if (py < r.yMin || py > r.yMax) continue;
@@ -326,12 +296,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
     return false;
   }
-
-
-
-
-
-
 
   // === GROUND CONFIG ===
   const GROUND_MODE = "custom"; // "custom" | "mars"
@@ -542,10 +506,8 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function getAnyPadCenter() {
     const h = hotspotInfo.get('AgoraPad');
     if (h) return h.pos.clone();
-
     if (_spaceBaseHotspotMeshes.has('AgoraPad'))
       return _spaceBaseHotspotMeshes.get('AgoraPad').position.clone();
-
     for (const [, grp] of _spaceBaseHotspotMeshes) return grp.position.clone();
     return (window.local?.parts?.group?.position?.clone?.() || new THREE.Vector3(0,0,0));
   }
@@ -589,7 +551,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
 
     const cx = (minX + maxX) * 0.5;
-    const cz = (minZ + maxZ) * 0.5;
+    const cz = (minZ + minZ + (maxZ - minZ)) * 0.5; // = (minZ+maxZ)/2
     const halfX = (maxX - minX) * 0.5;
     const halfZ = (maxZ - minZ) * 0.5;
     const r = Math.hypot(halfX, halfZ) + padding;
@@ -600,7 +562,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function ensureDebugRing(forCollider) {
     if (!DEBUG_COLLIDERS) return;
     if (forCollider._ring) return;
-
     const seg = 64, inner = forCollider.r - 0.05, outer = forCollider.r + 0.05;
     const geo = new THREE.RingGeometry(inner, outer, seg);
     const mat = new THREE.MeshBasicMaterial({ color: 0xff3a66, transparent: true, opacity: 0.45, depthWrite:false });
@@ -609,7 +570,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     colliderDebug.add(ring);
     forCollider._ring = ring;
   }
-
   function syncDebugRing(forCollider) {
     if (!DEBUG_COLLIDERS || !forCollider._ring) return;
     const cx = (forCollider.root?.position.x || 0) + (forCollider.offX || 0);
@@ -724,28 +684,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     root.position.set(x, y, z);
   }
 
-  // Çarpışma fonksiyonları
-
-    // Tek bir NPC için collider aç/kapat
-  function setCollisionEnabledFor(key, enabled, padding = 0.30){
-    const idx = colliders.findIndex(c => c.key === key);
-    if (enabled) {
-      if (idx !== -1) return;                 // zaten var
-      const root = npcRegistry.get(key);
-      if (!root) return;
-      const info = computeColliderInfo(root, padding);
-      const col = { key, root, r: info.r, padding, offX: info.offX, offZ: info.offZ };
-      colliders.push(col);
-      ensureDebugRing(col);                   // DEBUG_COLLIDERS true ise halka çizer
-    } else {
-      if (idx !== -1) {
-        const c = colliders[idx];
-        if (c._ring) colliderDebug.remove(c._ring);
-        colliders.splice(idx, 1);
-      }
-    }
-  }
-
   function collidesAt(nx, nz){
     for (const c of colliders){
       const cx = (c.root?.position.x ?? c.x) + (c.offX || 0);
@@ -758,7 +696,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
     return false;
   }
-  
   function pushOutFromColliders(pos){
     let px = pos.x, pz = pos.z;
     for (const c of colliders){
@@ -785,7 +722,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       if (!a && b) return { x:px, z:nz };
       return { x:px, z:pz };
     }
-
     if (!collidesAt(nx, nz)) return { x:nx, z:nz };
     if (!collidesAt(nx, pz)) return { x:nx, z:pz };
     if (!collidesAt(px, nz)) return { x:px, z:nz };
@@ -842,7 +778,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     return { group: grp, torso, head, armL, armR, legL, legR: legRMesh };
   }
 
-
   {
     const parts = buildStylizedChar(0xffe4c4);
     local.parts = parts; scene.add(parts.group);
@@ -862,7 +797,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   function ensureRemote(p){
     let R = remotes.get(p.id);
     if (R) return R;
-    // Tek tip görünüm (ileride NFT’den renk/stil türetiriz)
     const bodyCol = 0xadd8e6;
     const accent  = 0xffffff;
     const parts = buildStylizedChar(bodyCol, accent, { scale: 0.22, legH: 0.7, legR: 0.19 });
@@ -902,16 +836,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   }, { passive:false });
 
   if (playBtn) playBtn.addEventListener("click", () => {
-    // NFT entegrasyonu aktifse (index.html agoraInit dispatch ettiyse) burada iş yok
     if (window.agoraInjectedPayload) return;
-
-    // ---- Fallback (NFT seçimi yoksa eski yol) ----
     const desired = (nameInput?.value||"").trim().slice(0,20);
     if (desired) { local.name = desired; if (local.tag) updateNameTag(local, desired); }
-
     socket.emit("profile:update", { name: desired || undefined });
     socket.emit("join",           { name: desired || undefined });
-
     if (cta) cta.style.display = "none";
     try { renderer.domElement.requestPointerLock(); } catch(e){}
   });
@@ -983,26 +912,21 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     hotspotInfo.set(name, { pos:new THREE.Vector3(x,0,z), r });
     if (!SHOW_PADS) return;
   }
-
   function addPlanet(p){
     const R = (p.radius || 20) * (p.scale || PLANET_SIZE_MUL);
     const geo = new THREE.SphereGeometry(R, 48, 48);
     const mat = new THREE.MeshPhongMaterial({ color: p.color, map: moonTex, bumpMap: moonTex, bumpScale: 0.6 });
     const mesh = new THREE.Mesh(geo, mat);
-
     const altitude = (p.altitude != null) ? p.altitude : 0;
     mesh.position.set(p.x, R + 0.1 + altitude, p.z);
     mesh.rotation.x = -Math.PI/10;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-
     const label = makeNameSprite(p.name, "#9ef");
     label.position.set(0, R + 0.8, 0);
     mesh.add(label);
-
     scene.add(mesh);
     planetMeshes.push({ name: p.name, mesh, label, R });
-
     addHotspotDisk(`Pad:${p.name}`, p.x, p.z, Math.max(12, Math.min(22, R*0.55)));
     hotspotInfo.set(`Planet:${p.name}`, { pos: new THREE.Vector3(p.x, 0, p.z), r: (p.r ? p.r * (p.scale || PLANET_SIZE_MUL) : (R + 10)) });
   }
@@ -1014,7 +938,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     local.name = you.name;
     local.points = you.points || 0;
     pointsEl && (pointsEl.textContent = `Points: ${local.points}`);
-
     local.x = you.x; local.z = you.z; local.yaw = you.ry || 0;
 
     // Astronot (yerel)
@@ -1024,7 +947,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     // Pads/hotspots
     const PAD_KEYWORDS = ["totem","spawn","pad","platform","agora","hub","dock","deck"];
     let padCount = 0;
-
     (hotspots || []).forEach(h => {
       const name = h.name || "";
       const r = h.r || 12;
@@ -1038,25 +960,19 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       : new THREE.Vector3(local.parts.group.position.x, 0, local.parts.group.position.z);
     addHotspotDisk("AgoraPad", padPos.x, padPos.z, 18);
 
-        // Dünya merkezi = en yakın pad merkezi
+    // Dünya merkezi = en yakın pad merkezi
     worldCenter = padPos.clone();
-    // Kırmızı sınır ringini hazırla/güncelle
     ensureBoundaryRing();
 
-    // (İsteğe bağlı) Debug: sınır çemberini görsel olarak çiz
+    // (İsteğe bağlı) Debug: sınır çemberini yeşil gölge
     if (DEBUG_COLLIDERS) {
-      const ringGeo = new THREE.RingGeometry(
-        WORLD_BOUNDS.radius - 0.1,
-        WORLD_BOUNDS.radius + 0.1,
-        128
-      );
+      const ringGeo = new THREE.RingGeometry(WORLD_BOUNDS.radius - 0.1, WORLD_BOUNDS.radius + 0.1, 128);
       const ringMat = new THREE.MeshBasicMaterial({ color: 0x22ffaa, transparent: true, opacity: 0.15, depthWrite:false });
       const ring    = new THREE.Mesh(ringGeo, ringMat);
       ring.rotation.x = -Math.PI / 2;
       ring.position.set(worldCenter.x, 0.03, worldCenter.z);
       colliderDebug.add(ring);
     }
-
 
     // Gezegenler
     (planets || []).forEach(p => {
@@ -1119,40 +1035,36 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
       // Neon Skyscraper (yeni varlık)
       {
-        // Pad merkezini kullanalım:
         const c = getAnyPadCenter();
         spawnNPC('/models/Agora_Futuristic_Skyscraper_texture.glb', {
           onPad: false,
-          x: c.x + 52,             // konum: pad’e göre sağa
-          z: c.z - 24,             // konum: pad’e göre ileri/geri
+          x: c.x + 52,
+          z: c.z - 24,
           y: 0.0,
-          ry: Math.PI * 0.05,      // hafif yana çevir
-          targetDiag: 28,          // boyut (diyagonale göre); alternatif: scale: 1.2
-          name: 'Neon Skyscraper', // kayıt anahtarı
-          collision: true,         // çarpışma HALKASI aktif
-          colliderPadding: 0.35    // halkayı bir tık geniş tut
+          ry: Math.PI * 0.05,
+          targetDiag: 28,
+          name: 'Neon Skyscraper',
+          collision: true,
+          colliderPadding: 0.35
         });
       }
-      // Boyutu sahnede değiştir:
       const tower = getNPC('Neon Skyscraper');
       if (tower) {
-        tower.scale.setScalar(1.15);        // komple ölçek
-        tower.rotation.y = Math.PI * 0.08;  // biraz daha çevir
-        // taşıma:
-        // setNPCPosition('Neon Skyscraper', c.x + 60, c.z - 18, 0.0);
+        tower.scale.setScalar(1.15);
+        tower.rotation.y = Math.PI * 0.08;
       }
       window.AGORALazy.register({
         name: 'Neon Skyscraper (lazy)',
         x: padPos.x + 52,
         z: padPos.z - 24,
         url: '/models/Agora_Futuristic_Skyscraper_texture.glb',
-        dist: 35,       // 35m kalınca yükle
-        unload: true    // uzaklaşınca boşalt
+        dist: 35,
+        unload: true
       });
 
       // === AGORA Binaları (lazy yükleme) ===
       {
-        const C = getAnyPadCenter(); // pad merkezi
+        const C = getAnyPadCenter();
 
         AGORALazy.register({
           name: 'Mini Market',
@@ -1162,52 +1074,43 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
           unload: true
         });
 
-              // === Mini Market iç mekân & merdiven / platform ===
-      (function setupMiniMarketZones(){
-        const root = getNPC('Mini Market');   // spawnNPC(... name:'Mini Market', ...)
-        if (!root) { console.warn('Mini Market henüz yüklenmedi'); return; }
+        // Mini Market iç mekân & merdiven / platform — lazy load tamamlandığında kur
+        let _miniMarketZonesSet = false;
+        (function setupMiniMarketZonesRetry(){
+          if (_miniMarketZonesSet) return;
+          const root =
+            getNPC('Mini Market') ||
+            (window.AGORALazy?.packs?.find(p => p.name === 'Mini Market' && p.root)?.root);
+          if (!root) { setTimeout(setupMiniMarketZonesRetry, 600); return; }
 
-        const bx = root.position.x;
-        const bz = root.position.z;
+          const bx = root.position.x;
+          const bz = root.position.z;
 
-        // 1) Platform yükseltisi (dükkânın önü ve içi — düz 0.9m)
-        addHeightZoneRect('market-floor', bx-6.6, bz+3.6, bx+6.6, bz+6.0, 0.9, 0.9, null);
+          // Platform (0.9m)
+          addHeightZoneRect('market-floor',  bx-6.6, bz+3.6, bx+6.6, bz+6.0, 0.9, 0.9, null);
 
-        // 2) Merdiven rampası (sokaktan platforma lineer yüksel)
-        // Z ekseni boyunca 0.0 → 0.9; aralığı geniş tut (ayarla)
-        addHeightZoneRect('market-stairs', bx-3.2, bz+2.0, bx+1.2, bz+3.6, 0.0, 0.9, 'z');
+          // Rampa — z ekseninde 0.0 → 0.9
+          addHeightZoneRect('market-stairs', bx-3.2, bz+2.0, bx+1.2, bz+3.6, 0.0, 0.9, 'z');
 
-        // 3) Ön cam/duvar — ortada kapı boşluğu bırak
-        // Sol parça
-        addWallRect('market-front-L', bx-6.6, bz+3.6, bx-1.2, bz+3.9, 0.0, 2.5);
-        // Sağ parça
-        addWallRect('market-front-R', bx+1.2, bz+3.6, bx+6.6, bz+3.9, 0.0, 2.5);
-        // Kapı boşluğu: (bx-1.2 .. bx+1.2) aralığı BİLEREK eklenmedi.
+          // Ön cephe (kapı boşluğu bırakıldı)
+          addWallRect('market-front-L', bx-6.6, bz+3.6, bx-1.2, bz+3.9, 0.0, 2.5);
+          addWallRect('market-front-R', bx+1.2, bz+3.6, bx+6.6, bz+3.9, 0.0, 2.5);
 
-        // 4) Yan ve arka duvarlar (kalın dikdörtgenler)
-        addWallRect('market-left',  bx-6.8, bz+3.4, bx-6.5, bz+6.0, 0.0, 3.0);
-        addWallRect('market-right', bx+6.5, bz+3.4, bx+6.8, bz+6.0, 0.0, 3.0);
-        addWallRect('market-back',  bx-6.6, bz+5.7, bx+6.6, bz+6.0, 0.0, 3.0);
+          // Yan & arka
+          addWallRect('market-left',  bx-6.8, bz+3.4, bx-6.5, bz+6.0, 0.0, 3.0);
+          addWallRect('market-right', bx+6.5, bz+3.4, bx+6.8, bz+6.0, 0.0, 3.0);
+          addWallRect('market-back',  bx-6.6, bz+5.7, bx+6.6, bz+6.0, 0.0, 3.0);
 
-        // 5) İsteğe bağlı: Vitrin/tezgâh gibi iç engeller
-        // addWallRect('market-shelf', bx-2.0, bz+4.2, bx-0.8, bz+5.6, 0.8, 1.6);
-
-        console.log('[MiniMarket] bölgeler yerleştirildi. ALT+L ile konum, ALT+Z ile görünürlük.');
-      })();
-
+          _miniMarketZonesSet = true;
+          console.log('[MiniMarket] duvar+merdiven bölgeleri kuruldu.');
+        })();
       }
 
-
-
       // Çarpışma halkası aç/kapat:
-      setCollisionEnabledFor('Neon Skyscraper', false); // devre dışı
-      setCollisionEnabledFor('Neon Skyscraper', true, 0.40); // yeniden etkin (padding’i 0.40 yap)
-
+      setCollisionEnabledFor('Neon Skyscraper', false);
+      setCollisionEnabledFor('Neon Skyscraper', true, 0.40);
 
       swapLocalAvatarFromGLB('/models/alioba/Alioba_Merged_Animations.glb');
-
-
-      // window.AGORALazy.register({ name:'props-zone-1', x: padPos.x + 28, z: padPos.z, url:'/models/props_pack.glb', dist:30, unload:true });
     }
   });
 
@@ -1217,18 +1120,15 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       updateNameTag(R, p.name || R.name);
     }
   });
-
   socket.on("player-left", (id) => {
     const R = remotes.get(id);
     if (R){ scene.remove(R.parts.group); remotes.delete(id); }
   });
-
   socket.on("player:name", ({id,name}) => {
     if (id === local.id){ local.name = name; updateNameTag(local, name); }
     const R = remotes.get(id);
     if (R) updateNameTag(R, name);
   });
-
   socket.on("chat:msg", ({ from, text }) => {
     if (!chatLog) return;
     const p = document.createElement("p");
@@ -1236,13 +1136,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     chatLog.appendChild(p);
     chatLog.scrollTop = chatLog.scrollHeight;
   });
-
   socket.on("points:update", ({ total, delta, reason }) => {
     local.points = total;
     pointsEl && (pointsEl.textContent = `Points: ${local.points}`);
     showToast(`${delta>0?'+':''}${delta}  ${reason}`);
   });
-
   socket.on("quest:update", ({code, progress, goal}) =>
     showToast(`Görev: ${code} ${progress}/${goal}`)
   );
@@ -1258,13 +1156,11 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     parts.group.position.y = 0;
   }
   function playEmote(parts, id, type, ms=1200){
-        // GLB avatar kullanıyorsak emote'ları uygun kliplere map'le
     if (usingGLBAvatar) {
       if (type === 'dance' && actions.dance) playAction('dance', 0.12, 1.0);
       else if (type === 'clap' && actions.clap) playAction('clap', 0.12, 1.0);
-      return; // stylized kemik dönüşlerini atla
+      return;
     }
-
     const baseColor = parts.torso.material.color.clone();
     const token = (emoteTokens.get(id) || 0) + 1;
     emoteTokens.set(id, token);
@@ -1303,7 +1199,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
       R.parts.group.position.lerp(new THREE.Vector3(p.x,0,p.z), 0.2);
       if (typeof p.ry === "number") R.parts.group.rotation.y = THREE.MathUtils.lerp(R.parts.group.rotation.y, p.ry, 0.2);
       if (R.name !== p.name && p.name) updateNameTag(R, p.name);
-      // Cinsiyete göre model değiştirme KALDIRILDI
     });
   });
 
@@ -1322,7 +1217,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
   function tick(now){
     for (const c of colliders) syncDebugRing(c);
-    // FPS hesabı
+
     const _frameDt = now - _fpsLast; _fpsLast = now;
     const _instFps = 1000 / Math.max(1, _frameDt);
     _fpsEWMA = _fpsEWMA ? (_fpsEWMA*0.9 + _instFps*0.1) : _instFps;
@@ -1364,10 +1259,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
     local.parts.group.rotation.y = local.yaw;
 
-        // ... mevcut hareket/çarpışma çözümünden sonra:
     const slowK = enforceWorldBounds(local.parts.group.position);
-
-    // (İsteğe bağlı) kenarda bir kez uyar
     if (slowK < 1) {
       if (!local._edgeWarned) {
         showToast("Güvenli alan bitti. Geri dön!");
@@ -1379,7 +1271,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     // Yükseklik (merdiven/ramp/zemin)
     const wantY = targetYAt(local.parts.group.position.x, local.parts.group.position.z);
     local.parts.group.position.y = THREE.MathUtils.lerp(local.parts.group.position.y, wantY, 0.25);
-
 
     // Camera follow
     const camX = local.parts.group.position.x - Math.sin(local.yaw) * camDist;
@@ -1402,21 +1293,18 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
     checkHotspots();
 
-      // Animasyon güncelle
-  if (mixer) mixer.update(dt);
-
-  // Yürü/koş durumuna göre aksiyon
-  if (usingGLBAvatar) {
-    const moving = Math.abs(forward) + Math.abs(strafe) > 0.01;
-    const wantRun = moving && keys.has("ShiftLeft") && !!actions.run;
-    const nextName =
-      moving ? (wantRun ? 'run' : (actions.walk ? 'walk' : currentActionName))
-            : (actions.idle ? 'idle' : currentActionName);
-
-    if (nextName && nextName !== currentActionName) {
-      playAction(nextName, 0.12, wantRun ? 1.0 : 0.85);
+    // GLB anim
+    if (mixer) mixer.update(dt);
+    if (usingGLBAvatar) {
+      const moving = Math.abs(forward) + Math.abs(strafe) > 0.01;
+      const wantRun = moving && keys.has("ShiftLeft") && !!actions.run;
+      const nextName =
+        moving ? (wantRun ? 'run' : (actions.walk ? 'walk' : currentActionName))
+               : (actions.idle ? 'idle' : currentActionName);
+      if (nextName && nextName !== currentActionName) {
+        playAction(nextName, 0.12, wantRun ? 1.0 : 0.85);
+      }
     }
-  }
 
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
@@ -1439,152 +1327,203 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     try { socket?.close(); } catch(e) {}
   });
 
-  // Hızlı kısayollar: B = sınır ring aç/kapa, F10/` = admin panel aç/kapa
-document.addEventListener('keydown', (e) => {
-  if (e.key.toLowerCase?.() === 'b' && !chatFocus){
-    SHOW_WORLD_RING = !SHOW_WORLD_RING;
-    ensureBoundaryRing();
-    e.preventDefault();
-  }
-}, { passive:false });
-
-  // Kullanışlı: Pozisyon logger (ALT+L)
-// ===== AGORA: debug & hotkeys (single block) =====
-
-/* === AGORA HOTKEYS — Çakışmasız === */
-(() => {
-  const isTyping = () => {
-    const el = document.activeElement;
-    const tag = (el && el.tagName || '').toLowerCase();
-    return tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable);
-  };
-
-  // Pozisyon logger (ALT+L)
-  window.logPos = function(){
-    const p = (local?.parts?.group?.position) || {x:0,y:0,z:0};
-    console.log(`[pos] x=${p.x.toFixed(2)} z=${p.z.toFixed(2)} y=${p.y.toFixed(2)}`);
-  };
-
-  // Güvenli kısayollar:
-  //  Alt+B  : sınır/zone görünümü
-  //  ` (backquote): admin panel
-  //  Alt+L  : pozisyon log
-  window.addEventListener('keydown', (e) => {
-    if (isTyping()) return;
-
-    // Pozisyon
-    if (e.code === 'KeyL' && e.altKey) {
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      window.logPos();
-      return;
+  // Hızlı kısayollar: B = sınır ring aç/kapa
+  document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase?.() === 'b' && !chatFocus){
+      SHOW_WORLD_RING = !SHOW_WORLD_RING;
+      ensureBoundaryRing();
+      e.preventDefault();
     }
+  }, { passive:false });
 
-    // Sınır/zone toggle (Alt+B)
-    if (e.code === 'KeyB' && e.altKey) {
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      if (typeof toggleBoundaryDebug === 'function') toggleBoundaryDebug();
-      else if (window.Admin?.toggleZones) window.Admin.toggleZones();
-      return;
-    }
+  // ===== AGORA: debug & hotkeys (single block) =====
+  (() => {
+    const isTyping = () => {
+      const el = document.activeElement;
+      const tag = (el && el.tagName || '').toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable);
+    };
 
-    // Admin panel (` tuşu)
-    if (e.code === 'Backquote') {
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      window.AGORA_ADMIN?.toggle?.();
-      return;
-    }
-  }, { capture:true, passive:false });
-})();
+    // Pozisyon logger (ALT+L)
+    window.logPos = function(){
+      const p = (local?.parts?.group?.position) || {x:0,y:0,z:0};
+      console.log(`[pos] x=${p.x.toFixed(2)} z=${p.z.toFixed(2)} y=${p.y.toFixed(2)}`);
+    };
 
-// === Minimal Admin Panel (FPS dostu) ===/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-(function setupAdmin(){
-  const rootEl = document.getElementById('root');
-  if (!rootEl) return;
+    window.addEventListener('keydown', (e) => {
+      if (isTyping()) return;
 
-  const panel = document.createElement('div');
-  panel.style.cssText = `
-    position:fixed; top:12px; right:12px; z-index:1000;
-    width: 260px; max-width:92vw; padding:10px;
-    background:rgba(8,10,20,0.92); border:1px solid #234; border-radius:12px;
-    color:#cfe; font: 600 12px/1.4 Inter, system-ui; display:none; backdrop-filter:blur(4px);
-  `;
-  panel.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
-      <div style="color:#9cf;font-weight:800">Admin</div>
-      <button id="admClose" class="help-btn" style="width:28px;height:28px;line-height:0">×</button>
-    </div>
+      // Pozisyon
+      if (e.code === 'KeyL' && e.altKey) {
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        window.logPos();
+        return;
+      }
 
-    <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
-      <input id="admRing" type="checkbox" checked />
-      Sınır çemberi (kırmızı)
-    </label>
+      // Admin panel (` tuşu)
+      if (e.code === 'Backquote') {
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        window.AGORA_ADMIN?.toggle?.();
+        return;
+      }
 
-    <div style="margin:6px 0">
-      <div style="opacity:.9;margin-bottom:4px">Yarıçap: <b id="admRVal">${WORLD_BOUNDS.radius}</b> m</div>
-      <input id="admRadius" type="range" min="60" max="400" step="2" value="${WORLD_BOUNDS.radius}" style="width:100%">
-    </div>
+      // Alt+M : tüm bölge çizimleri (master)
+      if (e.altKey && e.code === 'KeyM') {
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        zoneDebug.visible = !zoneDebug.visible;
+        const z = document.getElementById('admZones'); if (z) z.checked = zoneDebug.visible;
+        return;
+      }
 
-    <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
-      <input id="admCollide" type="checkbox" ${COLLISION_ENABLED ? 'checked' : ''}/>
-      Çarpışma (duvarlar/NPC/objeler)
-    </label>
+      // Alt+1 : DUVAR çizgileri
+      if (e.altKey && e.code === 'Digit1') {
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        wallsDebug.visible = !wallsDebug.visible;
+        zoneDebug.visible  = wallsDebug.visible || heightsDebug.visible;
+        const w = document.getElementById('admWalls');  if (w) w.checked = wallsDebug.visible;
+        const z = document.getElementById('admZones');  if (z) z.checked = zoneDebug.visible;
+        return;
+      }
 
-    <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
-      <input id="admColDbg" type="checkbox" ${colliderDebug.visible ? 'checked' : ''}/>
-      Collider halkaları (debug)
-    </label>
+      // Alt+2 : MERDİVEN/YÜKSEKLİK
+      if (e.altKey && e.code === 'Digit2') {
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        heightsDebug.visible = !heightsDebug.visible;
+        zoneDebug.visible    = wallsDebug.visible || heightsDebug.visible;
+        const h = document.getElementById('admHeights'); if (h) h.checked = heightsDebug.visible;
+        const z = document.getElementById('admZones');   if (z) z.checked = zoneDebug.visible;
+        return;
+      }
+    }, { capture:true, passive:false });
+  })();
 
-    <small style="opacity:.75">Kısayollar: <b>B</b> ring aç/kapa · <b>F10</b> veya <b>\`</b> panel</small>
-  `;
-  rootEl.appendChild(panel);
+  // === Minimal Admin Panel (FPS dostu) ===
+  (function setupAdmin(){
+    const rootEl = document.getElementById('root');
+    if (!rootEl) return;
 
-  const btnClose = panel.querySelector('#admClose');
-  const chkRing  = panel.querySelector('#admRing');
-  const rngR     = panel.querySelector('#admRadius');
-  const lblR     = panel.querySelector('#admRVal');
-  const chkCol   = panel.querySelector('#admCollide');
-  const chkDbg   = panel.querySelector('#admColDbg');
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      position:fixed; top:12px; right:12px; z-index:1000;
+      width: 260px; max-width:92vw; padding:10px;
+      background:rgba(8,10,20,0.92); border:1px solid #234; border-radius:12px;
+      color:#cfe; font: 600 12px/1.4 Inter, system-ui; display:none; backdrop-filter:blur(4px);
+    `;
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
+        <div style="color:#9cf;font-weight:800">Admin</div>
+        <button id="admClose" class="help-btn" style="width:28px;height:28px;line-height:0">×</button>
+      </div>
 
-  chkRing.addEventListener('change', () => {
-    SHOW_WORLD_RING = chkRing.checked;
-    ensureBoundaryRing();
-  });
-  rngR.addEventListener('input', () => {
-    WORLD_BOUNDS.radius = Number(rngR.value) || WORLD_BOUNDS.radius;
-    lblR.textContent = WORLD_BOUNDS.radius;
-    ensureBoundaryRing();
-  });
-  chkCol.addEventListener('change', () => {
-    COLLISION_ENABLED = !!chkCol.checked;
-  });
-  chkDbg.addEventListener('change', () => {
-    colliderDebug.visible = !!chkDbg.checked;
-  });
-  btnClose.addEventListener('click', () => {
-    panel.style.display = 'none';
-  });
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+        <input id="admRing" type="checkbox" ${SHOW_WORLD_RING ? 'checked':''}/>
+        Sınır çemberi (kırmızı)
+      </label>
 
-  // HUD’a küçük bir dişli ekle (opsiyonel, yoksa F10/` ile aç)
-  try{
-    const hud = document.querySelector('.hud');
-    if (hud){
-      const gear = document.createElement('button');
-      gear.textContent = '⚙️';
-      gear.title = 'Admin';
-      gear.className = 'help-btn';
-      gear.style.marginLeft = '6px';
-      hud.appendChild(gear);
-      gear.addEventListener('click', () => {
-        panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none';
-      });
-    }
-  }catch{}
+      <div style="margin:6px 0">
+        <div style="opacity:.9;margin-bottom:4px">Yarıçap: <b id="admRVal">${WORLD_BOUNDS.radius}</b> m</div>
+        <input id="admRadius" type="range" min="60" max="400" step="2" value="${WORLD_BOUNDS.radius}" style="width:100%">
+      </div>
 
-  window.AGORA_ADMIN = {
-    toggle(){ panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none'; },
-    show(){ panel.style.display = 'block'; },
-    hide(){ panel.style.display = 'none'; }
-  };
-})(); // <= setupAdmin bitti
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+        <input id="admCollide" type="checkbox" ${COLLISION_ENABLED ? 'checked' : ''}/>
+        Çarpışma (duvarlar/NPC/objeler)
+      </label>
+
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+        <input id="admColDbg" type="checkbox" ${colliderDebug.visible ? 'checked' : ''}/>
+        Collider halkaları (debug)
+      </label>
+
+      <hr style="border:none;border-top:1px solid #234;margin:8px 0">
+
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+        <input id="admZones" type="checkbox" ${zoneDebug.visible ? 'checked' : ''}/>
+        Bölge çizimleri (genel görünürlük)
+      </label>
+
+      <div style="margin-left:10px;display:flex;flex-direction:column;gap:6px">
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input id="admWalls" type="checkbox" ${wallsDebug.visible ? 'checked' : ''}/>
+          Duvar dikdörtgenleri (AABB)
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input id="admHeights" type="checkbox" ${heightsDebug.visible ? 'checked' : ''}/>
+          Merdiven / yükseklik bölgeleri
+        </label>
+      </div>
+
+      <small style="opacity:.75;display:block;margin-top:8px">
+        Kısayollar: <b>B</b> ring · <b>Alt+M</b> bölgeler · <b>Alt+1</b> duvar · <b>Alt+2</b> merdiven · <b>\`</b> panel
+      </small>
+    `;
+    rootEl.appendChild(panel);
+
+    const btnClose = panel.querySelector('#admClose');
+    const chkRing  = panel.querySelector('#admRing');
+    const rngR     = panel.querySelector('#admRadius');
+    const lblR     = panel.querySelector('#admRVal');
+    const chkCol   = panel.querySelector('#admCollide');
+    const chkDbg   = panel.querySelector('#admColDbg');
+
+    const chkZones  = panel.querySelector('#admZones');
+    const chkWalls  = panel.querySelector('#admWalls');
+    const chkHeights= panel.querySelector('#admHeights');
+
+    chkRing.addEventListener('change', () => {
+      SHOW_WORLD_RING = chkRing.checked;
+      ensureBoundaryRing();
+    });
+    rngR.addEventListener('input', () => {
+      WORLD_BOUNDS.radius = Number(rngR.value) || WORLD_BOUNDS.radius;
+      lblR.textContent = WORLD_BOUNDS.radius;
+      ensureBoundaryRing();
+    });
+    chkCol.addEventListener('change', () => {
+      COLLISION_ENABLED = !!chkCol.checked;
+    });
+    chkDbg.addEventListener('change', () => {
+      colliderDebug.visible = !!chkDbg.checked;
+    });
+    chkZones?.addEventListener('change', () => {
+      zoneDebug.visible = !!chkZones.checked;
+    });
+    chkWalls?.addEventListener('change', () => {
+      wallsDebug.visible = !!chkWalls.checked;
+      zoneDebug.visible  = wallsDebug.visible || heightsDebug.visible;
+      chkZones.checked   = zoneDebug.visible;
+    });
+    chkHeights?.addEventListener('change', () => {
+      heightsDebug.visible = !!chkHeights.checked;
+      zoneDebug.visible    = wallsDebug.visible || heightsDebug.visible;
+      chkZones.checked     = zoneDebug.visible;
+    });
+
+    btnClose.addEventListener('click', () => {
+      panel.style.display = 'none';
+    });
+
+    // HUD’a küçük bir dişli ekle
+    try{
+      const hud = document.querySelector('.hud');
+      if (hud){
+        const gear = document.createElement('button');
+        gear.textContent = '⚙️';
+        gear.title = 'Admin';
+        gear.className = 'help-btn';
+        gear.style.marginLeft = '6px';
+        hud.appendChild(gear);
+        gear.addEventListener('click', () => {
+          panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none';
+        });
+      }
+    }catch{}
+
+    window.AGORA_ADMIN = {
+      toggle(){ panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none'; },
+      show(){ panel.style.display = 'block'; },
+      hide(){ panel.style.display = 'none'; }
+    };
+  })(); // <= setupAdmin bitti
 
 })(); // <= client.js ana IIFE bitti
