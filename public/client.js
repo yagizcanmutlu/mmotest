@@ -330,48 +330,50 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   // Kullanışlı: Pozisyon logger (ALT+L)
 // ===== AGORA: debug & hotkeys (single block) =====
 
-// ==== AGORA hotkeys (çakışmasız) ====
-// Yazarken kısayol çalışmasın
-const __isTyping = () => {
-  const el = document.activeElement;
-  const tag = (el && el.tagName || '').toLowerCase();
-  return tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable);
-};
+/* === AGORA HOTKEYS — Çakışmasız === */
+(() => {
+  const isTyping = () => {
+    const el = document.activeElement;
+    const tag = (el && el.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable);
+  };
 
-const __onKeyDown = (e) => {
-  if (__isTyping()) return;
+  // Pozisyon logger (ALT+L)
+  window.logPos = function(){
+    const p = (local?.parts?.group?.position) || {x:0,y:0,z:0};
+    console.log(`[pos] x=${p.x.toFixed(2)} z=${p.z.toFixed(2)} y=${p.y.toFixed(2)}`);
+  };
 
-  // Çakışmasız kombineler
-  const hitBoundary = (e.ctrlKey && e.shiftKey && e.code === 'KeyB');            // Ctrl+Shift+B
-  const hitAdmin    = (e.code === 'Backquote') ||                                // `
-                      (e.ctrlKey && e.shiftKey && e.code === 'KeyP');            // Ctrl+Shift+P
+  // Güvenli kısayollar:
+  //  Alt+B  : sınır/zone görünümü
+  //  ` (backquote): admin panel
+  //  Alt+L  : pozisyon log
+  window.addEventListener('keydown', (e) => {
+    if (isTyping()) return;
 
-  if (!hitBoundary && !hitAdmin) return;
+    // Pozisyon
+    if (e.code === 'KeyL' && e.altKey) {
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      window.logPos();
+      return;
+    }
 
-  e.preventDefault();
-  e.stopPropagation();
-  e.stopImmediatePropagation();
+    // Sınır/zone toggle (Alt+B)
+    if (e.code === 'KeyB' && e.altKey) {
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      if (typeof toggleBoundaryDebug === 'function') toggleBoundaryDebug();
+      else if (window.Admin?.toggleZones) window.Admin.toggleZones();
+      return;
+    }
 
-  if (hitBoundary) {
-    if (typeof toggleBoundaryDebug === 'function') toggleBoundaryDebug();
-    else if (window.Admin?.toggleZones) window.Admin.toggleZones();
-  } else if (hitAdmin) {
-    if (window.AGORA_ADMIN?.toggle) window.AGORA_ADMIN.toggle();
-    else console.log('[Admin] AGORA_ADMIN.toggle() bulunamadı');
-  }
-};
-
-window.addEventListener('keydown', __onKeyDown, { capture:true, passive:false });
-
-// Eski F9/F10 dinleyicilerini ve "toggleAdminPanel()" çağrısını kaldırdık.
-// B tuşu ile ring aç/kapa hâlâ dursun:
-document.addEventListener('keydown', (e) => {
-  if (e.key.toLowerCase?.() === 'b' && !__isTyping()){
-    SHOW_WORLD_RING = !SHOW_WORLD_RING;
-    ensureBoundaryRing();
-    e.preventDefault();
-  }
-}, { passive:false });
+    // Admin panel (` tuşu)
+    if (e.code === 'Backquote') {
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      window.AGORA_ADMIN?.toggle?.();
+      return;
+    }
+  }, { capture:true, passive:false });
+})();
 
 
 
