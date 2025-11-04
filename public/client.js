@@ -332,6 +332,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
 
 
 
+
   // === GROUND CONFIG ===
   const GROUND_MODE = "custom"; // "custom" | "mars"
   const GROUND_CUSTOM_URL  = "/textures/floor.webp";
@@ -1438,7 +1439,16 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     try { socket?.close(); } catch(e) {}
   });
 
-    // Kullanışlı: Pozisyon logger (ALT+L)
+  // Hızlı kısayollar: B = sınır ring aç/kapa, F10/` = admin panel aç/kapa
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase?.() === 'b' && !chatFocus){
+    SHOW_WORLD_RING = !SHOW_WORLD_RING;
+    ensureBoundaryRing();
+    e.preventDefault();
+  }
+}, { passive:false });
+
+  // Kullanışlı: Pozisyon logger (ALT+L)
 // ===== AGORA: debug & hotkeys (single block) =====
 
 /* === AGORA HOTKEYS — Çakışmasız === */
@@ -1485,46 +1495,6 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
     }
   }, { capture:true, passive:false });
 })();
-
-/* === Viewport/Resize Stabilizer === */
-(() => {
-  const rootEl = document.getElementById('root');
-  if (!rootEl) return;
-
-  // Başlangıçta mevcut iç yükseklik ile kilitle
-  let lockedH = window.innerHeight;
-  rootEl.style.height = lockedH + 'px';
-
-  // Küçük dalgalanmaları yok say (örn. yer imi çubuğu aç/kapa)
-  let lastApplied = lockedH;
-  let resizeTimer = 0;
-
-  const MIN_DELTA_TO_ACCEPT = 32;   // px: bundan küçük değişimleri görmezden gel
-  const APPLY_DELAY_MS       = 180; // gerçek resize'larda kısa gecikme ile uygula
-
-  window.addEventListener('resize', () => {
-    const ih = window.innerHeight;
-    const delta = Math.abs(ih - lastApplied);
-
-    // Ufak dalgalanma → yoksay
-    if (delta < MIN_DELTA_TO_ACCEPT) return;
-
-    // Gerçek boyut değişimi → kısa gecikme ile uygula
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      lockedH = window.innerHeight;
-      lastApplied = lockedH;
-      rootEl.style.height = lockedH + 'px';
-      // üç.js tarafını da güncelle
-      try {
-        renderer.setSize(rootEl.clientWidth, lockedH);
-        camera.aspect = rootEl.clientWidth / lockedH;
-        camera.updateProjectionMatrix();
-      } catch {}
-    }, APPLY_DELAY_MS);
-  }, { passive:true });
-})();
-
 
 // === Minimal Admin Panel (FPS dostu) ===/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 (function setupAdmin(){
