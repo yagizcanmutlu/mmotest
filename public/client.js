@@ -312,7 +312,7 @@ import { DRACOLoader } from '/vendor/three/examples/jsm/loaders/DRACOLoader.js';
   // === GROUND CONFIG ===
   const GROUND_MODE = "custom"; // "custom" | "mars"
   const GROUND_CUSTOM_URL  = "/textures/floor.webp";
-  const GROUND_CUSTOM_REPEAT = 18;
+  const GROUND_CUSTOM_REPEAT = 50; // karo tekrarı (daha büyük = daha sık karo)
   const GROUND_NORMAL_URL  = "https://cdn.prod.website-files.com/67fb1cd83af51c4fe96dacb2/69057eed2a91dc8d9d0f1bdc_floor.webp";
   const GROUND_MARS_URL    = "https://raw.githubusercontent.com/pmndrs/drei-assets/master/textures/planets/mars_albedo.jpg";
   const GROUND_MARS_NORMAL = "https://raw.githubusercontent.com/pmndrs/drei-assets/master/textures/planets/mars_normal.jpg";
